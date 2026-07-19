@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="APD Protokoll">
+<title>APD Protokoll &amp; Bestand</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#F2F6F5;
+    --surface:#FFFFFF;
+    --ink:#152B28;
+    --muted:#5C7570;
+    --border:#DCE7E3;
+    --primary:#1B6B63;
+    --primary-dark:#0F4D47;
+    --primary-tint:#E4F1EE;
+    --warn:#B8791F;
+    --warn-tint:#FBF0DE;
+    --danger:#B23A3A;
+    --danger-tint:#FBE9E7;
+    --radius:16px;
+    --safe-b: env(safe-area-inset-bottom, 0px);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    padding-bottom:calc(78px + var(--safe-b));
+    min-height:100vh;
+  }
+  header.app-header{
+    position:sticky; top:0; z-index:20;
+    background:rgba(242,246,245,0.92);
+    backdrop-filter:blur(10px);
+    padding:calc(18px + env(safe-area-inset-top,0px)) 20px 14px;
+    border-bottom:1px solid var(--border);
+  }
+  header.app-header h1{
+    margin:0; font-size:22px; font-weight:750; letter-spacing:-0.01em;
+  }
+  header.app-header p{
+    margin:2px 0 0; font-size:13px; color:var(--muted);
+  }
+  main{ padding:16px 16px 8px; max-width:640px; margin:0 auto; }
+  section.view{ display:none; animation:fade .2s ease; }
+  section.view.active{ display:block; }
+  @keyframes fade{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);} }
+
+  .eyebrow{
+    font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--primary); margin:18px 2px 8px;
+  }
+  .eyebrow:first-child{ margin-top:4px; }
+
+  .card{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{ margin:0 0 4px; font-size:16px; font-weight:700; }
+  .card .sub{ font-size:12.5px; color:var(--muted); margin:0 0 12px; }
+
+  .field{ margin-bottom:12px; min-width:0; }
+  .field label{ display:block; font-size:12.5px; font-weight:600; color:var(--muted); margin-bottom:5px; }
+  .row2{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px; }
+  .row3{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr); gap:10px; }
+  input[type=text], input[type=number], input[type=date], input[type=time], input[type=email], select, textarea{
+    width:100%; min-width:0; max-width:100%; padding:11px 12px; border-radius:11px; border:1px solid var(--border);
+    background:#FBFDFC; font-size:16px; color:var(--ink); font-family:inherit; box-sizing:border-box;
+  }
+  input:focus, select:focus, textarea:focus{ outline:2px solid var(--primary); outline-offset:1px; border-color:var(--primary); }
+  textarea{ resize:vertical; min-height:56px; }
+
+  .seg{ display:flex; border:1px solid var(--border); border-radius:11px; overflow:hidden; }
+  .seg button{
+    flex:1; padding:10px; border:none; background:#FBFDFC; font-size:14px; font-weight:600; color:var(--muted);
+    cursor:pointer; border-right:1px solid var(--border);
+  }
+  .seg button:last-child{ border-right:none; }
+  .seg button.active{ background:var(--primary); color:#fff; }
+
+  button.btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    padding:12px 16px; border-radius:12px; border:none; font-size:15px; font-weight:700;
+    cursor:pointer; width:100%;
+  }
+  .btn-primary{ background:var(--primary); color:#fff; }
+  .btn-primary:active{ background:var(--primary-dark); }
+  .btn-ghost{ background:var(--primary-tint); color:var(--primary-dark); }
+  .btn-danger-ghost{ background:var(--danger-tint); color:var(--danger); }
+  .btn-row{ display:flex; gap:10px; }
+  .btn-row .btn{ width:auto; flex:1; }
+
+  table{ width:100%; border-collapse:collapse; font-size:13px; }
+  th{ text-align:left; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; padding:6px 8px; border-bottom:1px solid var(--border); }
+  td{ padding:8px; border-bottom:1px solid var(--border); font-variant-numeric:tabular-nums; }
+  .table-wrap{ overflow-x:auto; margin:0 -4px; }
+  tr:last-child td{ border-bottom:none; }
+  .muted{ color:var(--muted); }
+  .neg{ color:var(--danger); font-weight:700; }
+  .pill{ display:inline-block; padding:2px 8px; border-radius:99px; font-size:11px; font-weight:700; }
+  .pill-teal{ background:var(--primary-tint); color:var(--primary-dark); }
+  .pill-warn{ background:var(--warn-tint); color:var(--warn); }
+  .pill-danger{ background:var(--danger-tint); color:var(--danger); }
+
+  .empty{ text-align:center; padding:26px 10px; color:var(--muted); font-size:14px; }
+
+  .stock-row{ display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border); gap:10px; }
+  .stock-row:last-child{ border-bottom:none; }
+  .stock-row .name{ font-size:14.5px; font-weight:600; flex:1; min-width:0; }
+  .stock-row .name small{ display:block; font-weight:400; color:var(--muted); font-size:11.5px; }
+  .stock-row input{ width:64px; flex-shrink:0; text-align:center; }
+
+  .ring-wrap{ display:flex; align-items:center; gap:18px; }
+  .ring-wrap .info{ flex:1; }
+  .ring-wrap .info .big{ font-size:15px; font-weight:700; }
+  .ring-wrap .info .small{ font-size:12.5px; color:var(--muted); margin-top:2px; }
+
+  nav.tabbar{
+    position:fixed; bottom:0; left:0; right:0; z-index:30;
+    background:rgba(255,255,255,0.94); backdrop-filter:blur(12px);
+    border-top:1px solid var(--border);
+    display:flex; padding:8px 6px calc(8px + var(--safe-b));
+  }
+  nav.tabbar button{
+    flex:1; background:none; border:none; display:flex; flex-direction:column; align-items:center; gap:3px;
+    padding:6px 2px; color:var(--muted); font-size:11px; font-weight:600; cursor:pointer;
+  }
+  nav.tabbar button svg{ width:23px; height:23px; }
+  nav.tabbar button.active{ color:var(--primary); }
+
+  .banner{ padding:12px 14px; border-radius:12px; font-size:13.5px; font-weight:600; margin-bottom:14px; display:flex; gap:10px; align-items:flex-start; }
+  .banner.ok{ background:var(--primary-tint); color:var(--primary-dark); }
+  .banner.warn{ background:var(--warn-tint); color:var(--warn); }
+  .banner.danger{ background:var(--danger-tint); color:var(--danger); }
+  .banner svg{ flex-shrink:0; margin-top:1px; }
+
+  .toast{
+    position:fixed; bottom:calc(90px + var(--safe-b)); left:50%; transform:translateX(-50%) translateY(10px);
+    background:var(--ink); color:#fff; padding:10px 18px; border-radius:99px; font-size:13.5px; font-weight:600;
+    opacity:0; pointer-events:none; transition:all .25s ease; z-index:50; white-space:nowrap;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <h1 id="headerTitle">Protokoll</h1>
+  <p id="headerSub">APD-Dialyse Dokumentation</p>
+</header>
+
+<main>
+
+  <!-- ================= PROTOKOLL ================= -->
+  <section class="view active" id="view-protokoll">
+    <div class="eyebrow">Stammdaten</div>
+    <div class="card">
+      <div class="field" style="margin-bottom:0;"><label>Name, Vorname</label><input type="text" id="p_name" placeholder="für Kopfzeile der PDFs"></div>
+    </div>
+
+    <div class="eyebrow">Neuer Eintrag</div>
+    <div class="card">
+      <div class="row2">
+        <div class="field"><label>Datum</label><input type="date" id="f_datum"></div>
+        <div class="field"><label>Uhrzeit</label><input type="time" id="f_zeit"></div>
+      </div>
+      <div class="row3">
+        <div class="field"><label>RR systolisch</label><input type="number" id="f_sys" placeholder="mmHg"></div>
+        <div class="field"><label>RR diastolisch</label><input type="number" id="f_dia" placeholder="mmHg"></div>
+        <div class="field"><label>Puls</label><input type="number" id="f_puls" placeholder="/min"></div>
+      </div>
+      <div class="field"><label>Gewicht (kg)</label><input type="number" step="0.1" id="f_gewicht" placeholder="kg"></div>
+
+      <div class="row2">
+        <div class="field"><label>Beutel 1 – Farbe</label>
+          <select id="f_b1_farbe"><option value="">–</option><option value="gelb">Gelb</option><option value="gruen">Grün</option></select>
+        </div>
+        <div class="field"><label>Beutel 1 – Anzahl</label><input type="number" id="f_b1_anzahl" value="1" min="0"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Beutel 2 – Farbe</label>
+          <select id="f_b2_farbe"><option value="">–</option><option value="gelb">Gelb</option><option value="gruen">Grün</option></select>
+        </div>
+        <div class="field"><label>Beutel 2 – Anzahl</label><input type="number" id="f_b2_anzahl" value="1" min="0"></div>
+      </div>
+
+      <div class="field">
+        <label>PD Pause</label>
+        <div class="seg" id="seg_pause">
+          <button type="button" data-val="nein" class="active">Nein</button>
+          <button type="button" data-val="ja">Ja</button>
+        </div>
+      </div>
+
+      <div class="row2">
+        <div class="field"><label>UF (ml)</label><input type="number" id="f_uf" placeholder="ml"></div>
+        <div class="field"><label>Behandlungsvolumen (ml)</label><input type="number" id="f_volumen" placeholder="ml"></div>
+      </div>
+      <div class="field"><label>Bemerkungen</label><textarea id="f_bemerkung" placeholder="Auffälligkeiten, Alarme, Sonstiges…"></textarea></div>
+
+      <button class="btn btn-primary" id="btnSaveEntry">Eintrag speichern</button>
+    </div>
+
+    <div class="eyebrow">Verlauf</div>
+    <div class="card" id="protokollListCard">
+      <div class="table-wrap">
+        <table id="protokollTable">
+          <thead><tr>
+            <th>Datum</th><th>RR</th><th>Puls</th><th>kg</th><th>Beutel 1</th><th>Beutel 2</th><th>Pause</th><th>UF</th><th>Vol.</th><th></th>
+          </tr></thead>
+          <tbody id="protokollBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="protokollEmpty" style="display:none;">Noch keine Einträge. Trage oben deine erste Behandlung ein.</div>
+    </div>
+
+    <div class="eyebrow">Protokoll exportieren</div>
+    <div class="card">
+      <p class="sub">Erzeugt ein Wochenblatt im Stil des Papierprotokolls, mit Patientenname und Erstellungsdatum im Kopf.</p>
+      <div class="row2">
+        <div class="field"><label>Woche von</label><input type="date" id="p_von"></div>
+        <div class="field"><label>bis</label><input type="date" id="p_bis"></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="btnProtoPdf">PDF herunterladen</button>
+        <button class="btn btn-ghost" id="btnProtoPrint">Drucken</button>
+      </div>
+      <button class="btn btn-primary" id="btnProtoMail" style="margin-top:10px;">Per E-Mail senden</button>
+    </div>
+  </section>
+
+  <!-- ================= BESTAND ================= -->
+  <section class="view" id="view-bestand">
+    <div class="eyebrow">Materialbestand</div>
+    <div class="card">
+      <p class="sub">Trage deinen aktuellen Lagerbestand ein. Beutel, Kassette, Kappe, ES Kompresse und Wundverband werden bei jedem Protokolleintrag automatisch abgezogen.</p>
+      <div id="stockList"></div>
+      <button class="btn btn-primary" id="btnSaveStock" style="margin-top:14px;">Bestand speichern</button>
+    </div>
+  </section>
+
+  <!-- ================= BESTELLUNG ================= -->
+  <section class="view" id="view-bestellung">
+    <div class="eyebrow">Lieferung &amp; Reserve</div>
+    <div class="card">
+      <div class="row2">
+        <div class="field"><label>Nächste Lieferung</label><input type="date" id="s_lieferdatum"></div>
+        <div class="field"><label>Liefervorlauf (Tage)</label><input type="number" id="s_vorlauf" value="14" min="0"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Lieferintervall (Tage)</label><input type="number" id="s_intervall" value="30" min="1"></div>
+        <div class="field"><label>Reserve (Tage)</label><input type="number" id="s_reserve" value="5" min="0"></div>
+      </div>
+      <div class="field"><label>E-Mail für Bestellung</label><input type="email" id="s_email" placeholder="bestellung@lieferant.de"></div>
+      <p class="sub" style="margin:2px 0 12px;">„Nächste Lieferung“ wird nur für die Bestellmengen-Berechnung genutzt. Wann du spätestens bestellen musst, ermittelt die App unten direkt aus deinem Verbrauch.</p>
+      <button class="btn btn-ghost" id="btnCalc">Empfehlung berechnen</button>
+    </div>
+
+    <div id="recoWrap"></div>
+
+    <div class="eyebrow">Manueller Verbrauch (nicht behandlungsgebunden)</div>
+    <div class="card">
+      <p class="sub">Seife, Desinfektion und Hygienetücher werden nicht automatisch abgezogen. Gib hier deinen ungefähren Tagesverbrauch an, damit die Empfehlung sie berücksichtigt.</p>
+      <div class="row3">
+        <div class="field"><label>Seife /Tag</label><input type="number" step="0.01" id="m_seife" value="0"></div>
+        <div class="field"><label>Desinf. /Tag</label><input type="number" step="0.01" id="m_desinfektion" value="0"></div>
+        <div class="field"><label>Tücher /Tag</label><input type="number" step="0.01" id="m_hygienetuecher" value="0"></div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<nav class="tabbar">
+  <button data-view="protokoll" class="active">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h6a1 1 0 0 1 1 1v1H8V3a1 1 0 0 1 1-1Z"/><path d="M7 4h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M9 10h6M9 14h6M9 18h3"/></svg>
+    Protokoll
+  </button>
+  <button data-view="bestand">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8l9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+    Bestand
+  </button>
+  <button data-view="bestellung">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="7" width="14" height="10" rx="1"/><path d="M15 10h4l3 3v4h-7"/><circle cx="6" cy="19" r="1.6"/><circle cx="17.5" cy="19" r="1.6"/></svg>
+    Bestellung
+  </button>
+</nav>
+
+<script>
+(function(){
+  "use strict";
+
+  const ITEMS = [
+    { key:'beutel_gelb',   label:'Beutel gelb',        unit:'Stk', manual:false },
+    { key:'beutel_gruen',  label:'Beutel grün',        unit:'Stk', manual:false },
+    { key:'kassette',      label:'Kassette',           unit:'Stk', manual:false },
+    { key:'kappe',         label:'Kappe',              unit:'Stk', manual:false },
+    { key:'es_kompresse',  label:'ES Kompresse',       unit:'Stk', manual:false },
+    { key:'wundverband',   label:'Wundverband',        unit:'Stk', manual:false },
+    { key:'seife',         label:'Seife',              unit:'Stk', manual:true },
+    { key:'desinfektion',  label:'Desinfektionsmittel',unit:'Stk', manual:true },
+    { key:'hygienetuecher',label:'Hygienetücher',      unit:'Pkg', manual:true },
+  ];
+  const FIXED = { kassette:1, kappe:1, es_kompresse:4, wundverband:1 };
+
+  let entries = [];
+  let bestand = {};
+  let settings = { lieferintervall:30, reservetage:5, vorlaufzeit:14, naechste_lieferung:'', email:'', manual_seife:0, manual_desinfektion:0, manual_hygienetuecher:0 };
+  let patientInfo = { name:'' };
+
+  ITEMS.forEach(i => bestand[i.key] = 0);
+
+  // ---------- storage (IndexedDB – funktioniert auch als eigenständige Home-Bildschirm-App) ----------
+  const DB_NAME = 'apd_protokoll_db';
+  const STORE_NAME = 'kv';
+  let dbPromise = null;
+
+  function openDB(){
+    return new Promise((resolve, reject)=>{
+      if(!window.indexedDB){ reject(new Error('IndexedDB nicht verfügbar')); return; }
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = ()=>{ req.result.createObjectStore(STORE_NAME); };
+      req.onsuccess = ()=> resolve(req.result);
+      req.onerror = ()=> reject(req.error);
+    });
+  }
+  function getDB(){
+    if(!dbPromise) dbPromise = openDB();
+    return dbPromise;
+  }
+
+  async function loadKey(key, fallback){
+    try{
+      const db = await getDB();
+      return await new Promise((resolve, reject)=>{
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const req = tx.objectStore(STORE_NAME).get(key);
+        req.onsuccess = ()=> resolve(req.result !== undefined ? req.result : fallback);
+        req.onerror = ()=> reject(req.error);
+      });
+    }catch(e){
+      console.error('load error', key, e);
+      return fallback;
+    }
+  }
+
+  async function saveKey(key, val){
+    try{
+      const db = await getDB();
+      await new Promise((resolve, reject)=>{
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).put(val, key);
+        tx.oncomplete = ()=> resolve(true);
+        tx.onerror = ()=> reject(tx.error);
+      });
+      return true;
+    }catch(e){
+      console.error('save error', key, e);
+      showToast('Speichern fehlgeschlagen – Speicher nicht verfügbar');
+      showStorageBanner();
+      return false;
+    }
+  }
+
+  function showStorageBanner(){
+    if(document.getElementById('storageErrorBanner')) return;
+    const b = document.createElement('div');
+    b.id = 'storageErrorBanner';
+    b.className = 'banner danger';
+    b.style.margin = '0 16px 12px';
+    b.innerHTML = '<span>⚠️</span><span>Der Gerätespeicher ist gerade nicht erreichbar (z.\u202fB. privater Modus). Deine Eingaben bleiben nur für diese Sitzung erhalten.</span>';
+    document.body.insertBefore(b, document.querySelector('header.app-header').nextSibling);
+  }
+
+  function uid(){ return 'e_' + Date.now() + '_' + Math.random().toString(36).slice(2,8); }
+
+  function showToast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(showToast._h);
+    showToast._h = setTimeout(()=> t.classList.remove('show'), 1800);
+  }
+
+  function fmt(n, digits){
+    if(n === Infinity) return '∞';
+    if(n === undefined || n === null || isNaN(n)) return '–';
+    return Number(n).toLocaleString('de-DE', { minimumFractionDigits:digits||0, maximumFractionDigits:digits||0 });
+  }
+  function fmtDate(d){
+    if(!d) return '–';
+    const dt = (d instanceof Date) ? d : new Date(d);
+    if(isNaN(dt.getTime())) return '–';
+    return dt.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'numeric' });
+  }
+  function isoDate(d){ return d.toISOString().slice(0,10); }
+  function currentWeekRange(){
+    const now = new Date(); now.setHours(0,0,0,0);
+    const day = now.getDay();
+    const diffToMonday = (day === 0 ? -6 : 1 - day);
+    const monday = new Date(now); monday.setDate(now.getDate() + diffToMonday);
+    const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+    return { von: isoDate(monday), bis: isoDate(sunday) };
+  }
+
+  // ---------- generic bordered PDF table (Papierprotokoll-Stil) ----------
+  function drawPdfTable(doc, startX, startY, columns, rows, opts){
+    opts = opts || {};
+    const fontSize = opts.fontSize || 8;
+    const headerH = opts.headerH || 10;
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const bottomMargin = 16;
+    let y = startY;
+
+    // Respektiert eingebaute \n-Umbrüche und bricht zusätzlich lange Zeilen an der Zellbreite um
+    function wrapCell(text, maxWidth){
+      const raw = String(text === undefined || text === null ? '' : text);
+      const forcedLines = raw.split('\n');
+      let out = [];
+      forcedLines.forEach(line=>{
+        const wrapped = doc.splitTextToSize(line, maxWidth);
+        out = out.concat(wrapped.length ? wrapped : ['']);
+      });
+      return out;
+    }
+
+    function drawHeaderRow(yy){
+      let x = startX;
+      doc.setFontSize(fontSize);
+      doc.setFont(undefined, 'bold');
+      doc.setFillColor(228, 241, 238);
+      doc.setDrawColor(150, 175, 170);
+      columns.forEach(col=>{
+        doc.rect(x, yy, col.width, headerH, 'FD');
+        const lines = wrapCell(col.header, col.width - 3);
+        doc.text(lines, x + 1.5, yy + 4.2);
+        x += col.width;
+      });
+      doc.setFont(undefined, 'normal');
+      doc.setFillColor(255,255,255);
+      return yy + headerH;
+    }
+
+    y = drawHeaderRow(y);
+
+    rows.forEach(row=>{
+      const cellLines = columns.map((col, i)=> wrapCell(row[i], col.width - 3));
+      const maxLines = Math.max(1, ...cellLines.map(l=>l.length));
+      const rh = Math.max(9, maxLines * 3.6 + 3.5);
+
+      if(y + rh > pageHeight - bottomMargin){
+        doc.addPage();
+        y = 18;
+        y = drawHeaderRow(y);
+      }
+
+      let x = startX;
+      doc.setFontSize(fontSize);
+      columns.forEach((col, i)=>{
+        doc.setDrawColor(150, 175, 170);
+        doc.rect(x, y, col.width, rh);
+        doc.text(cellLines[i], x + 1.5, y + 4.2);
+        x += col.width;
+      });
+      y += rh;
+    });
+
+    return y;
+  }
+
+  function pdfHeader(doc, title){
+    doc.setFontSize(15);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(20,40,38);
+    doc.text(title, 14, 18);
+    doc.setDrawColor(27,107,99);
+    doc.setLineWidth(0.6);
+    doc.line(14, 22, 196, 22);
+
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(60,60,60);
+    doc.text('Name, Vorname: ' + (patientInfo.name || '—'), 14, 29);
+    doc.text('Erstellt am: ' + fmtDate(new Date()), 140, 29);
+    doc.setTextColor(0,0,0);
+  }
+
+  // ---------- tabs ----------
+  const titles = {
+    protokoll: ['Protokoll', 'APD-Dialyse Dokumentation'],
+    bestand: ['Bestand', 'Materialverwaltung'],
+    bestellung: ['Bestellung', 'Nachbestell-Empfehlung']
+  };
+  document.querySelectorAll('nav.tabbar button').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('nav.tabbar button').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelectorAll('section.view').forEach(v=>v.classList.remove('active'));
+      const view = btn.dataset.view;
+      document.getElementById('view-' + view).classList.add('active');
+      document.getElementById('headerTitle').textContent = titles[view][0];
+      document.getElementById('headerSub').textContent = titles[view][1];
+      if(view === 'bestellung') renderRecommendation();
+    });
+  });
+
+  // ---------- PD Pause segment ----------
+  let pdPause = 'nein';
+  document.querySelectorAll('#seg_pause button').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('#seg_pause button').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      pdPause = btn.dataset.val;
+    });
+  });
+
+  // ---------- Protokoll: save entry ----------
+  function consumptionForEntry(e){
+    const c = { beutel_gelb:0, beutel_gruen:0, kassette:FIXED.kassette, kappe:FIXED.kappe, es_kompresse:FIXED.es_kompresse, wundverband:FIXED.wundverband };
+    if(e.b1_farbe === 'gelb') c.beutel_gelb += Number(e.b1_anzahl||0);
+    if(e.b1_farbe === 'gruen') c.beutel_gruen += Number(e.b1_anzahl||0);
+    if(e.b2_farbe === 'gelb') c.beutel_gelb += Number(e.b2_anzahl||0);
+    if(e.b2_farbe === 'gruen') c.beutel_gruen += Number(e.b2_anzahl||0);
+    return c;
+  }
+
+  document.getElementById('btnSaveEntry').addEventListener('click', async ()=>{
+    const datum = document.getElementById('f_datum').value;
+    if(!datum){ showToast('Bitte Datum angeben'); return; }
+    const e = {
+      id: uid(),
+      datum,
+      zeit: document.getElementById('f_zeit').value,
+      sys: document.getElementById('f_sys').value,
+      dia: document.getElementById('f_dia').value,
+      puls: document.getElementById('f_puls').value,
+      gewicht: document.getElementById('f_gewicht').value,
+      b1_farbe: document.getElementById('f_b1_farbe').value,
+      b1_anzahl: document.getElementById('f_b1_anzahl').value,
+      b2_farbe: document.getElementById('f_b2_farbe').value,
+      b2_anzahl: document.getElementById('f_b2_anzahl').value,
+      pause: pdPause,
+      uf: document.getElementById('f_uf').value,
+      volumen: document.getElementById('f_volumen').value,
+      bemerkung: document.getElementById('f_bemerkung').value
+    };
+    const cons = consumptionForEntry(e);
+    Object.keys(cons).forEach(k => { bestand[k] = (bestand[k]||0) - cons[k]; });
+
+    entries.push(e);
+    await saveKey('dialyse:entries', entries);
+    await saveKey('material:bestand', bestand);
+
+    // reset form
+    ['f_sys','f_dia','f_puls','f_gewicht','f_uf','f_volumen','f_bemerkung'].forEach(id=> document.getElementById(id).value = '');
+    document.getElementById('f_b1_farbe').value = '';
+    document.getElementById('f_b2_farbe').value = '';
+    document.getElementById('f_b1_anzahl').value = 1;
+    document.getElementById('f_b2_anzahl').value = 1;
+    document.querySelectorAll('#seg_pause button').forEach(b=>b.classList.remove('active'));
+    document.querySelector('#seg_pause button[data-val="nein"]').classList.add('active');
+    pdPause = 'nein';
+    setDefaultDateTime();
+
+    renderProtokoll();
+    renderStock();
+    showToast('Eintrag gespeichert');
+  });
+
+  async function deleteEntry(id){
+    const idx = entries.findIndex(e=>e.id===id);
+    if(idx === -1) return;
+    const e = entries[idx];
+    const cons = consumptionForEntry(e);
+    Object.keys(cons).forEach(k => { bestand[k] = (bestand[k]||0) + cons[k]; });
+    entries.splice(idx,1);
+    await saveKey('dialyse:entries', entries);
+    await saveKey('material:bestand', bestand);
+    renderProtokoll();
+    renderStock();
+    showToast('Eintrag gelöscht, Bestand zurückgebucht');
+  }
+
+  function beutelLabel(farbe, anzahl){
+    if(!farbe) return '–';
+    const name = farbe === 'gelb' ? 'Gelb' : 'Grün';
+    return (anzahl || 1) + '× ' + name;
+  }
+
+  function renderProtokoll(){
+    const body = document.getElementById('protokollBody');
+    const empty = document.getElementById('protokollEmpty');
+    const sorted = [...entries].sort((a,b)=> (b.datum+ (b.zeit||'')).localeCompare(a.datum+(a.zeit||'')));
+    if(sorted.length === 0){
+      body.innerHTML = '';
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    body.innerHTML = sorted.map(e=>{
+      const rr = (e.sys || e.dia) ? (e.sys||'–') + '/' + (e.dia||'–') : '–';
+      return '<tr>' +
+        '<td>' + fmtDate(e.datum) + (e.zeit ? '<br><span class="muted">' + e.zeit + '</span>' : '') + '</td>' +
+        '<td>' + rr + '</td>' +
+        '<td>' + (e.puls || '–') + '</td>' +
+        '<td>' + (e.gewicht || '–') + '</td>' +
+        '<td>' + beutelLabel(e.b1_farbe, e.b1_anzahl) + '</td>' +
+        '<td>' + beutelLabel(e.b2_farbe, e.b2_anzahl) + '</td>' +
+        '<td>' + (e.pause === 'ja' ? 'Ja' : 'Nein') + '</td>' +
+        '<td>' + (e.uf || '–') + '</td>' +
+        '<td>' + (e.volumen || '–') + '</td>' +
+        '<td><button data-id="' + e.id + '" class="delEntryBtn" style="border:none;background:none;color:var(--danger);font-weight:700;cursor:pointer;">✕</button></td>' +
+      '</tr>';
+    }).join('');
+    body.querySelectorAll('.delEntryBtn').forEach(b=>{
+      b.addEventListener('click', ()=> deleteEntry(b.dataset.id));
+    });
+  }
+
+  function setDefaultDateTime(){
+    const now = new Date();
+    document.getElementById('f_datum').value = now.toISOString().slice(0,10);
+    document.getElementById('f_zeit').value = now.toTimeString().slice(0,5);
+  }
+
+  document.getElementById('p_name').addEventListener('change', async ()=>{
+    patientInfo.name = document.getElementById('p_name').value;
+    await saveKey('patient:info', patientInfo);
+  });
+
+  // ---------- Protokoll-PDF (im Stil des Papierprotokolls) ----------
+  function protokollRangeEntries(){
+    const von = document.getElementById('p_von').value;
+    const bis = document.getElementById('p_bis').value;
+    return entries
+      .filter(e => (!von || e.datum >= von) && (!bis || e.datum <= bis))
+      .sort((a,b)=> (a.datum + (a.zeit||'')).localeCompare(b.datum + (b.zeit||'')));
+  }
+
+  function beutelPdfText(e){
+    const parts = [];
+    if(e.b1_farbe) parts.push('1: ' + (e.b1_anzahl||1) + '×' + (e.b1_farbe === 'gelb' ? 'Gelb' : 'Grün'));
+    if(e.b2_farbe) parts.push('2: ' + (e.b2_anzahl||1) + '×' + (e.b2_farbe === 'gelb' ? 'Gelb' : 'Grün'));
+    return parts.length ? parts.join('\n') : '–';
+  }
+
+  function buildProtokollPdf(){
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const von = document.getElementById('p_von').value;
+    const bis = document.getElementById('p_bis').value;
+    const rangeEntries = protokollRangeEntries();
+
+    pdfHeader(doc, 'APD-Dialyse Protokoll');
+    doc.setFontSize(10);
+    doc.text('Woche: von ' + fmtDate(von) + '  bis  ' + fmtDate(bis), 14, 35);
+
+    const columns = [
+      { header:'Datum', width:20 },
+      { header:'Blutdruck / Puls', width:24 },
+      { header:'Gewicht', width:16 },
+      { header:'PD Pause', width:16 },
+      { header:'UF', width:16 },
+      { header:'Beutel', width:30 },
+      { header:'Behandl.-vol.', width:18 },
+      { header:'Verbandswechsel / Besonderheiten', width:42 }
+    ];
+    const rows = rangeEntries.map(e=>{
+      const rr = (e.sys || e.dia) ? (e.sys||'–') + '/' + (e.dia||'–') + (e.puls ? '\n' + e.puls + '/min' : '') : (e.puls ? e.puls + '/min' : '–');
+      return [
+        fmtDate(e.datum) + (e.zeit ? '\n' + e.zeit : ''),
+        rr,
+        e.gewicht ? e.gewicht + ' kg' : '–',
+        e.pause === 'ja' ? 'Ja' : 'Nein',
+        e.uf ? e.uf + ' ml' : '–',
+        beutelPdfText(e),
+        e.volumen ? e.volumen + ' ml' : '–',
+        e.bemerkung || '–'
+      ];
+    });
+
+    if(rows.length === 0){
+      doc.setFontSize(10);
+      doc.text('Keine Einträge im gewählten Zeitraum.', 14, 46);
+    } else {
+      drawPdfTable(doc, 14, 41, columns, rows);
+    }
+
+    return doc;
+  }
+
+  function handleProtokollPdf(action){
+    const doc = buildProtokollPdf();
+    const von = document.getElementById('p_von').value;
+    const bis = document.getElementById('p_bis').value;
+    const filename = 'APD_Protokoll_' + (von||'') + '_bis_' + (bis||'') + '.pdf';
+
+    if(action === 'print'){
+      window.open(doc.output('bloburl'), '_blank');
+      return;
+    }
+    doc.save(filename);
+    if(action === 'mail'){
+      const subject = 'APD-Dialyse Protokoll ' + (patientInfo.name ? '– ' + patientInfo.name : '') + ' (' + fmtDate(von) + ' – ' + fmtDate(bis) + ')';
+      let body = 'Hallo,\n\nanbei das Dialyseprotokoll für den Zeitraum ' + fmtDate(von) + ' bis ' + fmtDate(bis) + '.\n\n';
+      body += '(Bitte das zuvor heruntergeladene PDF an diese E-Mail anhängen.)\n\nDanke!';
+      window.location.href = 'mailto:?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+    }
+    showToast(action === 'mail' ? 'PDF wird heruntergeladen' : 'PDF wird heruntergeladen');
+  }
+
+  document.getElementById('btnProtoPdf').addEventListener('click', ()=> handleProtokollPdf('save'));
+  document.getElementById('btnProtoPrint').addEventListener('click', ()=> handleProtokollPdf('print'));
+  document.getElementById('btnProtoMail').addEventListener('click', ()=> handleProtokollPdf('mail'));
+
+  // ---------- Bestand ----------
+  function renderStock(){
+    const wrap = document.getElementById('stockList');
+    wrap.innerHTML = ITEMS.map(it=>{
+      const val = bestand[it.key] || 0;
+      return '<div class="stock-row">' +
+        '<div class="name">' + it.label + (it.manual ? '<small>manuell erfasst</small>' : '') + '</div>' +
+        '<input type="number" step="1" data-key="' + it.key + '" value="' + val + '"> <span class="muted" style="font-size:12px;width:28px;">' + it.unit + '</span>' +
+      '</div>';
+    }).join('');
+  }
+
+  document.getElementById('btnSaveStock').addEventListener('click', async ()=>{
+    document.querySelectorAll('#stockList input').forEach(inp=>{
+      bestand[inp.dataset.key] = Number(inp.value || 0);
+    });
+    await saveKey('material:bestand', bestand);
+    renderStock();
+    showToast('Bestand gespeichert');
+  });
+
+  // ---------- Bestellung ----------
+  function computeRates(){
+    const manualRates = {
+      seife: Number(document.getElementById('m_seife').value || 0),
+      desinfektion: Number(document.getElementById('m_desinfektion').value || 0),
+      hygienetuecher: Number(document.getElementById('m_hygienetuecher').value || 0)
+    };
+    if(entries.length === 0){
+      return {
+        rates: { beutel_gelb:0, beutel_gruen:0, kassette:1, kappe:1, es_kompresse:4, wundverband:1, ...manualRates },
+        usingDefault: true, daysSpan:0, treatments:0
+      };
+    }
+    const times = entries.map(e=> new Date(e.datum).getTime()).filter(t=>!isNaN(t));
+    const minD = Math.min(...times), maxD = Math.max(...times);
+    const daysSpan = Math.max(1, Math.round((maxD - minD) / 86400000) + 1);
+    let gelb = 0, gruen = 0;
+    entries.forEach(e=>{
+      if(e.b1_farbe === 'gelb') gelb += Number(e.b1_anzahl||0);
+      if(e.b1_farbe === 'gruen') gruen += Number(e.b1_anzahl||0);
+      if(e.b2_farbe === 'gelb') gelb += Number(e.b2_anzahl||0);
+      if(e.b2_farbe === 'gruen') gruen += Number(e.b2_anzahl||0);
+    });
+    const n = entries.length;
+    return {
+      rates: {
+        beutel_gelb: gelb / daysSpan,
+        beutel_gruen: gruen / daysSpan,
+        kassette: (n * FIXED.kassette) / daysSpan,
+        kappe: (n * FIXED.kappe) / daysSpan,
+        es_kompresse: (n * FIXED.es_kompresse) / daysSpan,
+        wundverband: (n * FIXED.wundverband) / daysSpan,
+        ...manualRates
+      },
+      usingDefault: false, daysSpan, treatments: n
+    };
+  }
+
+  function readSettings(){
+    settings.naechste_lieferung = document.getElementById('s_lieferdatum').value;
+    settings.vorlaufzeit = Number(document.getElementById('s_vorlauf').value || 0);
+    settings.lieferintervall = Number(document.getElementById('s_intervall').value || 30);
+    settings.reservetage = Number(document.getElementById('s_reserve').value || 0);
+    settings.email = document.getElementById('s_email').value;
+    settings.manual_seife = Number(document.getElementById('m_seife').value || 0);
+    settings.manual_desinfektion = Number(document.getElementById('m_desinfektion').value || 0);
+    settings.manual_hygienetuecher = Number(document.getElementById('m_hygienetuecher').value || 0);
+    return settings;
+  }
+
+  let lastRecommendation = null;
+
+  function computeRecommendation(){
+    const s = readSettings();
+    const { rates, usingDefault, daysSpan, treatments } = computeRates();
+    const today = new Date(); today.setHours(0,0,0,0);
+    let daysUntilDelivery = 0;
+    let lieferdatum = null;
+    if(s.naechste_lieferung){
+      lieferdatum = new Date(s.naechste_lieferung + 'T00:00:00');
+      daysUntilDelivery = Math.max(0, Math.round((lieferdatum - today) / 86400000));
+    }
+
+    const results = ITEMS.map(it=>{
+      const rate = rates[it.key] || 0;
+      const currentStock = bestand[it.key] || 0;
+      const stockAtDelivery = currentStock - rate * daysUntilDelivery;
+      const need = rate * (s.lieferintervall + s.reservetage);
+      const orderQty = Math.max(0, Math.ceil(need - stockAtDelivery));
+      const daysOfSupply = rate > 0 ? currentStock / rate : Infinity;
+
+      // Spätester Bestelltermin: Bestand muss bis zum Eintreffen der Lieferung (Liefervorlauf)
+      // reichen und danach noch die gewünschte Reservemenge übrig lassen.
+      let mustOrderInDays = null;
+      let mustOrderDate = null;
+      if(rate > 0){
+        mustOrderInDays = Math.floor(daysOfSupply - s.vorlaufzeit - s.reservetage);
+        mustOrderDate = new Date(today.getTime() + mustOrderInDays * 86400000);
+      }
+      return { ...it, rate, currentStock, stockAtDelivery, orderQty, daysOfSupply, mustOrderInDays, mustOrderDate };
+    });
+
+    const finite = results.filter(r => r.mustOrderDate !== null);
+    const critical = finite.length ? finite.reduce((a,b)=> a.mustOrderDate < b.mustOrderDate ? a : b) : null;
+    const spaetesterBestelltermin = critical ? critical.mustOrderDate : null;
+
+    lastRecommendation = { results, daysUntilDelivery, lieferdatum, usingDefault, daysSpan, treatments, settings: {...s}, critical, spaetesterBestelltermin };
+    return lastRecommendation;
+  }
+
+  function renderRecommendation(){
+    const reco = computeRecommendation();
+    const wrap = document.getElementById('recoWrap');
+    const s = reco.settings;
+    const critical = reco.critical;
+    const mustOrderInDays = critical ? critical.mustOrderInDays : null;
+
+    let rc;
+    if(mustOrderInDays === null){
+      rc = { color:'var(--primary)', label:'kein Verbrauch erfasst' };
+    } else if(mustOrderInDays <= 0){
+      rc = { color:'var(--danger)', label:'überfällig' };
+    } else if(mustOrderInDays <= 7){
+      rc = { color:'var(--warn)', label:'bald' };
+    } else {
+      rc = { color:'var(--primary)', label:'rechtzeitig' };
+    }
+
+    const maxDisplay = Math.max(30, s.vorlaufzeit + s.reservetage + 14);
+    const clampedDays = mustOrderInDays === null ? maxDisplay : Math.max(0, Math.min(maxDisplay, mustOrderInDays));
+    const pct = (clampedDays / maxDisplay) * 100;
+    const circumference = 2 * Math.PI * 40;
+    const dash = (pct/100) * circumference;
+
+    let banner = '';
+    if(reco.usingDefault){
+      banner = '<div class="banner warn"><span>ℹ️</span><span>Noch keine Protokolldaten vorhanden – Empfehlung basiert auf der Annahme 1 Behandlung/Tag.</span></div>';
+    } else if(!critical){
+      banner = '<div class="banner warn"><span>ℹ️</span><span>Für keinen Artikel liegen genug Verbrauchsdaten vor, um einen Bestelltermin zu berechnen.</span></div>';
+    } else if(mustOrderInDays <= 0){
+      banner = '<div class="banner danger"><span>⚠️</span><span>Spätester Bestelltermin ist überschritten – bestelle <strong>' + critical.label + '</strong> jetzt!</span></div>';
+    } else {
+      banner = '<div class="banner ok"><span>✓</span><span>Spätestens bestellen am <strong>' + fmtDate(reco.spaetesterBestelltermin) + '</strong> (kritisch: ' + critical.label + ', in ' + mustOrderInDays + ' Tagen)</span></div>';
+    }
+
+    const rows = reco.results.map(r=>{
+      const stockCell = r.currentStock < 0 ? '<span class="neg">' + fmt(r.currentStock) + '</span>' : fmt(r.currentStock);
+      const orderCell = r.orderQty > 0 ? '<strong>' + fmt(r.orderQty) + '</strong>' : '<span class="muted">0</span>';
+      const deadlineCell = r.mustOrderDate ? fmtDate(r.mustOrderDate) : '–';
+      return '<tr><td>' + r.label + '</td><td>' + stockCell + '</td><td>' + fmt(r.rate,2) + '</td><td>' + deadlineCell + '</td><td>' + orderCell + '</td></tr>';
+    }).join('');
+
+    wrap.innerHTML =
+      '<div class="eyebrow">Empfehlung</div>' +
+      '<div class="card">' +
+        banner +
+        '<div class="ring-wrap" style="margin-bottom:6px;">' +
+          '<svg width="96" height="96" viewBox="0 0 96 96">' +
+            '<circle cx="48" cy="48" r="40" fill="none" stroke="var(--border)" stroke-width="8"/>' +
+            '<circle cx="48" cy="48" r="40" fill="none" stroke="' + rc.color + '" stroke-width="8" stroke-linecap="round" ' +
+              'stroke-dasharray="' + dash + ' ' + circumference + '" transform="rotate(-90 48 48)"/>' +
+            '<text x="48" y="44" text-anchor="middle" font-size="20" font-weight="700" fill="var(--ink)">' + (mustOrderInDays===null?'–':Math.max(0,Math.round(mustOrderInDays))) + '</text>' +
+            '<text x="48" y="60" text-anchor="middle" font-size="9" fill="var(--muted)">Tage bis Bestellung</text>' +
+          '</svg>' +
+          '<div class="info">' +
+            '<div class="big">' + (critical ? critical.label : 'Kein Verbrauch erfasst') + '</div>' +
+            '<div class="small">knappstes Material · Status: ' + rc.label + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="table-wrap">' +
+          '<table><thead><tr><th>Artikel</th><th>Bestand</th><th>⌀/Tag</th><th>bestellen bis</th><th>Menge</th></tr></thead>' +
+          '<tbody>' + rows + '</tbody></table>' +
+        '</div>' +
+        '<div class="btn-row" style="margin-top:14px;">' +
+          '<button class="btn btn-ghost" id="btnPdf">PDF herunterladen</button>' +
+          '<button class="btn btn-ghost" id="btnPrint">Drucken</button>' +
+        '</div>' +
+        '<button class="btn btn-primary" id="btnMail" style="margin-top:10px;">Per E-Mail vorbereiten</button>' +
+      '</div>';
+
+    document.getElementById('btnPdf').addEventListener('click', ()=> generatePdf('save'));
+    document.getElementById('btnPrint').addEventListener('click', ()=> generatePdf('print'));
+    document.getElementById('btnMail').addEventListener('click', prepareMail);
+  }
+
+  ['s_lieferdatum','s_vorlauf','s_intervall','s_reserve','s_email','m_seife','m_desinfektion','m_hygienetuecher'].forEach(id=>{
+    document.getElementById(id).addEventListener('change', async ()=>{
+      readSettings();
+      await saveKey('bestellung:settings', settings);
+    });
+  });
+  document.getElementById('btnCalc').addEventListener('click', renderRecommendation);
+
+  function buildOrderLines(){
+    if(!lastRecommendation) computeRecommendation();
+    return lastRecommendation.results.filter(r => r.orderQty > 0);
+  }
+
+  function generatePdf(action){
+    if(!lastRecommendation) computeRecommendation();
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const items = buildOrderLines();
+    const s = lastRecommendation.settings;
+    const critical = lastRecommendation.critical;
+
+    pdfHeader(doc, 'Materialbestellung – APD-Dialyse');
+    doc.setFontSize(10);
+    const headLine = critical
+      ? 'Spätester Bestelltermin: ' + fmtDate(lastRecommendation.spaetesterBestelltermin) + ' (kritisch: ' + critical.label + ')'
+      : 'Spätester Bestelltermin: noch nicht ermittelbar';
+    doc.text(headLine, 14, 35);
+    doc.text('Liefervorlauf: ' + s.vorlaufzeit + ' Tage   ·   Reserve: ' + s.reservetage + ' Tage', 14, 40);
+
+    const columns = [
+      { header:'Artikel', width:46 },
+      { header:'Aktueller Bestand', width:32 },
+      { header:'⌀ Verbrauch/Tag', width:32 },
+      { header:'Bestellen bis', width:28 },
+      { header:'Bestellmenge', width:44 }
+    ];
+    const rows = items.map(r => [r.label, fmt(r.currentStock), fmt(r.rate,2), r.mustOrderDate ? fmtDate(r.mustOrderDate) : '–', fmt(r.orderQty) + ' ' + r.unit]);
+
+    if(rows.length === 0){
+      doc.setFontSize(10);
+      doc.text('Keine Bestellung erforderlich.', 14, 50);
+    } else {
+      drawPdfTable(doc, 14, 46, columns, rows);
+    }
+
+    if(action === 'print'){
+      window.open(doc.output('bloburl'), '_blank');
+      return doc;
+    }
+    doc.save('Materialbestellung_APD_' + isoDate(new Date()) + '.pdf');
+    showToast('PDF wird heruntergeladen');
+    return doc;
+  }
+
+  function prepareMail(){
+    if(!lastRecommendation) computeRecommendation();
+    const items = buildOrderLines();
+    const email = lastRecommendation.settings.email || '';
+    const subject = 'Materialbestellung APD-Dialyse' + (patientInfo.name ? ' – ' + patientInfo.name : '');
+    let body = 'Hallo,\n\nbitte folgende Materialien liefern:\n\n';
+    if(items.length === 0){
+      body += 'Aktuell ist keine Nachbestellung erforderlich.\n\n';
+    } else {
+      items.forEach(r=>{ body += '- ' + r.label + ': ' + fmt(r.orderQty) + ' ' + r.unit + '\n'; });
+      body += '\n';
+    }
+    if(lastRecommendation.critical){
+      body += 'Spätester Bestelltermin: ' + fmtDate(lastRecommendation.spaetesterBestelltermin) + '\n\n';
+    }
+    if(lastRecommendation.lieferdatum){
+      body += 'Gewünschtes Lieferdatum: ' + fmtDate(lastRecommendation.lieferdatum) + '\n\n';
+    }
+    body += '(Bitte das zuvor heruntergeladene PDF an diese E-Mail anhängen.)\n\nDanke!';
+
+    const mailto = 'mailto:' + encodeURIComponent(email) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+    window.location.href = mailto;
+  }
+
+  // ---------- init ----------
+  async function init(){
+    entries = await loadKey('dialyse:entries', []);
+    const loadedBestand = await loadKey('material:bestand', null);
+    if(loadedBestand) Object.assign(bestand, loadedBestand);
+    const loadedSettings = await loadKey('bestellung:settings', null);
+    if(loadedSettings) Object.assign(settings, loadedSettings);
+    const loadedPatient = await loadKey('patient:info', null);
+    if(loadedPatient) Object.assign(patientInfo, loadedPatient);
+    document.getElementById('p_name').value = patientInfo.name || '';
+
+    const week = currentWeekRange();
+    document.getElementById('p_von').value = week.von;
+    document.getElementById('p_bis').value = week.bis;
+
+    document.getElementById('s_lieferdatum').value = settings.naechste_lieferung || '';
+    document.getElementById('s_vorlauf').value = settings.vorlaufzeit;
+    document.getElementById('s_intervall').value = settings.lieferintervall;
+    document.getElementById('s_reserve').value = settings.reservetage;
+    document.getElementById('s_email').value = settings.email || '';
+    document.getElementById('m_seife').value = settings.manual_seife || 0;
+    document.getElementById('m_desinfektion').value = settings.manual_desinfektion || 0;
+    document.getElementById('m_hygienetuecher').value = settings.manual_hygienetuecher || 0;
+
+    setDefaultDateTime();
+    renderProtokoll();
+    renderStock();
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

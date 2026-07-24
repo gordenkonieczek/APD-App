@@ -238,6 +238,13 @@
 
   <!-- ================= BESTAND ================= -->
   <section class="view" id="view-bestand">
+    <div class="eyebrow">Lieferung erhalten</div>
+    <div class="card">
+      <p class="sub">Trage die Mengen aus deiner Lieferung ein – sie werden zum aktuellen Bestand addiert.</p>
+      <div id="deliveryList"></div>
+      <button class="btn btn-primary" id="btnBookDelivery" style="margin-top:14px;">Lieferung verbuchen</button>
+    </div>
+
     <div class="eyebrow">Materialbestand</div>
     <div class="card">
       <p class="sub">Trage deinen aktuellen Lagerbestand ein. Beutel, Kassette, Kappe, ES Kompresse und Wundverband werden bei jedem Protokolleintrag automatisch abgezogen.</p>
@@ -734,6 +741,35 @@
     }).join('');
   }
 
+  function renderDeliveryList(){
+    const wrap = document.getElementById('deliveryList');
+    wrap.innerHTML = ITEMS.map(it=>{
+      return '<div class="stock-row">' +
+        '<div class="name">' + it.label + '</div>' +
+        '<input type="number" step="1" data-key="' + it.key + '" value="0" placeholder="0"> <span class="muted" style="font-size:12px;width:28px;">' + it.unit + '</span>' +
+      '</div>';
+    }).join('');
+  }
+
+  document.getElementById('btnBookDelivery').addEventListener('click', async ()=>{
+    let bookedAny = false;
+    document.querySelectorAll('#deliveryList input').forEach(inp=>{
+      const qty = Number(inp.value || 0);
+      if(qty !== 0){
+        bestand[inp.dataset.key] = (bestand[inp.dataset.key] || 0) + qty;
+        bookedAny = true;
+      }
+    });
+    if(!bookedAny){
+      showToast('Keine Mengen eingetragen');
+      return;
+    }
+    await saveKey('material:bestand', bestand);
+    renderDeliveryList();
+    renderStock();
+    showToast('Lieferung verbucht');
+  });
+
   document.getElementById('btnSaveStock').addEventListener('click', async ()=>{
     document.querySelectorAll('#stockList input').forEach(inp=>{
       bestand[inp.dataset.key] = Number(inp.value || 0);
@@ -1013,6 +1049,7 @@
     setDefaultDateTime();
     renderProtokoll();
     renderStock();
+    renderDeliveryList();
   }
 
   init();

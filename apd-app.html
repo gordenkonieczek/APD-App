@@ -205,7 +205,10 @@
       </div>
       <div class="field"><label>Bemerkungen</label><textarea id="f_bemerkung" placeholder="Auffälligkeiten, Alarme, Sonstiges…"></textarea></div>
 
-      <button class="btn btn-primary" id="btnSaveEntry">Eintrag speichern</button>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btnSaveEntry">Eintrag speichern</button>
+        <button class="btn btn-ghost" id="btnCancelEdit" style="display:none; flex:0 0 auto; width:auto; padding:12px 18px;">Abbrechen</button>
+      </div>
     </div>
 
     <div class="eyebrow">Verlauf</div>
@@ -542,6 +545,8 @@
   });
 
   // ---------- Protokoll: save entry ----------
+  let editingId = null;
+
   function consumptionForEntry(e){
     const c = { beutel_gelb:0, beutel_gruen:0, kassette:FIXED.kassette, kappe:FIXED.kappe, es_kompresse:FIXED.es_kompresse, wundverband:FIXED.wundverband };
     if(e.b1_farbe === 'gelb') c.beutel_gelb += Number(e.b1_anzahl||0);
@@ -551,11 +556,57 @@
     return c;
   }
 
+  function resetEntryForm(){
+    ['f_sys','f_dia','f_puls','f_gewicht','f_uf','f_volumen','f_bemerkung'].forEach(id=> document.getElementById(id).value = '');
+    document.getElementById('f_b1_farbe').value = '';
+    document.getElementById('f_b2_farbe').value = '';
+    document.getElementById('f_b1_anzahl').value = 1;
+    document.getElementById('f_b2_anzahl').value = 1;
+    document.querySelectorAll('#seg_pause button').forEach(b=>b.classList.remove('active'));
+    document.querySelector('#seg_pause button[data-val="nein"]').classList.add('active');
+    pdPause = 'nein';
+    setDefaultDateTime();
+  }
+
+  function stopEditing(){
+    editingId = null;
+    document.getElementById('btnSaveEntry').textContent = 'Eintrag speichern';
+    document.getElementById('btnCancelEdit').style.display = 'none';
+    resetEntryForm();
+  }
+
+  function startEditing(id){
+    const e = entries.find(x=>x.id===id);
+    if(!e) return;
+    editingId = id;
+    document.getElementById('f_datum').value = e.datum;
+    document.getElementById('f_zeit').value = e.zeit || '';
+    document.getElementById('f_sys').value = e.sys || '';
+    document.getElementById('f_dia').value = e.dia || '';
+    document.getElementById('f_puls').value = e.puls || '';
+    document.getElementById('f_gewicht').value = e.gewicht || '';
+    document.getElementById('f_b1_farbe').value = e.b1_farbe || '';
+    document.getElementById('f_b1_anzahl').value = e.b1_anzahl || 1;
+    document.getElementById('f_b2_farbe').value = e.b2_farbe || '';
+    document.getElementById('f_b2_anzahl').value = e.b2_anzahl || 1;
+    document.getElementById('f_uf').value = e.uf || '';
+    document.getElementById('f_volumen').value = e.volumen || '';
+    document.getElementById('f_bemerkung').value = e.bemerkung || '';
+    document.querySelectorAll('#seg_pause button').forEach(b=>b.classList.remove('active'));
+    document.querySelector('#seg_pause button[data-val="' + (e.pause === 'ja' ? 'ja' : 'nein') + '"]').classList.add('active');
+    pdPause = e.pause === 'ja' ? 'ja' : 'nein';
+
+    document.getElementById('btnSaveEntry').textContent = 'Änderungen speichern';
+    document.getElementById('btnCancelEdit').style.display = '';
+    document.querySelector('[data-view="protokoll"]').click();
+    document.getElementById('f_datum').scrollIntoView({ behavior:'smooth', block:'start' });
+  }
+
   document.getElementById('btnSaveEntry').addEventListener('click', async ()=>{
     const datum = document.getElementById('f_datum').value;
     if(!datum){ showToast('Bitte Datum angeben'); return; }
     const e = {
-      id: uid(),
+      id: editingId || uid(),
       datum,
       zeit: document.getElementById('f_zeit').value,
       sys: document.getElementById('f_sys').value,
@@ -571,28 +622,35 @@
       volumen: document.getElementById('f_volumen').value,
       bemerkung: document.getElementById('f_bemerkung').value
     };
-    const cons = consumptionForEntry(e);
-    Object.keys(cons).forEach(k => { bestand[k] = (bestand[k]||0) - cons[k]; });
 
-    entries.push(e);
+    if(editingId){
+      const idx = entries.findIndex(x=>x.id===editingId);
+      if(idx !== -1){
+        const oldCons = consumptionForEntry(entries[idx]);
+        Object.keys(oldCons).forEach(k => { bestand[k] = (bestand[k]||0) + oldCons[k]; });
+        entries[idx] = e;
+      }
+    } else {
+      entries.push(e);
+    }
+    const newCons = consumptionForEntry(e);
+    Object.keys(newCons).forEach(k => { bestand[k] = (bestand[k]||0) - newCons[k]; });
+
     await saveKey('dialyse:entries', entries);
     await saveKey('material:bestand', bestand);
 
-    // reset form
-    ['f_sys','f_dia','f_puls','f_gewicht','f_uf','f_volumen','f_bemerkung'].forEach(id=> document.getElementById(id).value = '');
-    document.getElementById('f_b1_farbe').value = '';
-    document.getElementById('f_b2_farbe').value = '';
-    document.getElementById('f_b1_anzahl').value = 1;
-    document.getElementById('f_b2_anzahl').value = 1;
-    document.querySelectorAll('#seg_pause button').forEach(b=>b.classList.remove('active'));
-    document.querySelector('#seg_pause button[data-val="nein"]').classList.add('active');
-    pdPause = 'nein';
-    setDefaultDateTime();
+    const wasEditing = !!editingId;
+    editingId = null;
+    document.getElementById('btnSaveEntry').textContent = 'Eintrag speichern';
+    document.getElementById('btnCancelEdit').style.display = 'none';
+    resetEntryForm();
 
     renderProtokoll();
     renderStock();
-    showToast('Eintrag gespeichert');
+    showToast(wasEditing ? 'Änderungen gespeichert' : 'Eintrag gespeichert');
   });
+
+  document.getElementById('btnCancelEdit').addEventListener('click', stopEditing);
 
   async function deleteEntry(id){
     const idx = entries.findIndex(e=>e.id===id);
@@ -603,6 +661,7 @@
     entries.splice(idx,1);
     await saveKey('dialyse:entries', entries);
     await saveKey('material:bestand', bestand);
+    if(editingId === id) stopEditing();
     renderProtokoll();
     renderStock();
     showToast('Eintrag gelöscht, Bestand zurückgebucht');
@@ -636,9 +695,15 @@
         '<td>' + (e.pause === 'ja' ? 'Ja' : 'Nein') + '</td>' +
         '<td>' + (e.uf || '–') + '</td>' +
         '<td>' + (e.volumen || '–') + '</td>' +
-        '<td><button data-id="' + e.id + '" class="delEntryBtn" style="border:none;background:none;color:var(--danger);font-weight:700;cursor:pointer;">✕</button></td>' +
+        '<td style="white-space:nowrap;">' +
+          '<button data-id="' + e.id + '" class="editEntryBtn" style="border:none;background:none;color:var(--primary);font-weight:700;cursor:pointer;padding:4px 6px;">✎</button>' +
+          '<button data-id="' + e.id + '" class="delEntryBtn" style="border:none;background:none;color:var(--danger);font-weight:700;cursor:pointer;padding:4px 6px;">✕</button>' +
+        '</td>' +
       '</tr>';
     }).join('');
+    body.querySelectorAll('.editEntryBtn').forEach(b=>{
+      b.addEventListener('click', ()=> startEditing(b.dataset.id));
+    });
     body.querySelectorAll('.delEntryBtn').forEach(b=>{
       b.addEventListener('click', ()=> deleteEntry(b.dataset.id));
     });

@@ -281,6 +281,17 @@
         <div class="field"><label>Tücher /Tag</label><input type="number" step="0.01" id="m_hygienetuecher" value="0"></div>
       </div>
     </div>
+
+    <div class="eyebrow">Datensicherung</div>
+    <div class="card">
+      <p class="sub">iOS kann den Speicher von Home-Bildschirm-Apps in seltenen Fällen leeren (z.&nbsp;B. bei langer Nichtnutzung oder wenig Gerätespeicher). Exportiere deine Daten regelmäßig als Sicherung, um sie im Zweifel wiederherstellen zu können.</p>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="btnExportBackup">Sicherung exportieren</button>
+        <button class="btn btn-ghost" id="btnImportBackup">Sicherung einspielen</button>
+      </div>
+      <input type="file" id="importFileInput" accept="application/json" style="display:none;">
+      <p class="sub" id="backupInfo" style="margin:10px 0 0;"></p>
+    </div>
   </section>
 
 </main>
@@ -1023,6 +1034,87 @@
   }
 
   // ---------- init ----------
+  // ---------- Datensicherung (Export / Import) ----------
+  function exportBackup(){
+    const backup = {
+      type: 'apd-app-backup',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      patientInfo,
+      entries,
+      bestand,
+      settings
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'APD_Sicherung_' + isoDate(new Date()) + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(()=> URL.revokeObjectURL(url), 2000);
+    showToast('Sicherung wird heruntergeladen');
+  }
+
+  function importBackupFile(file){
+    const reader = new FileReader();
+    reader.onload = async ()=>{
+      let data;
+      try{
+        data = JSON.parse(reader.result);
+      }catch(e){
+        document.getElementById('backupInfo').textContent = 'Diese Datei ist keine gültige Sicherungsdatei.';
+        return;
+      }
+      if(!data || data.type !== 'apd-app-backup' || !Array.isArray(data.entries)){
+        document.getElementById('backupInfo').textContent = 'Diese Datei ist keine gültige Sicherungsdatei.';
+        return;
+      }
+      const confirmMsg = 'Sicherung vom ' + fmtDate(data.exportedAt) + ' einspielen?\n\nDas ersetzt alle aktuell auf diesem Gerät gespeicherten Protokoll- und Bestandsdaten.';
+      if(!window.confirm(confirmMsg)) return;
+
+      entries = data.entries || [];
+      bestand = Object.assign({}, bestand, data.bestand || {});
+      settings = Object.assign({}, settings, data.settings || {});
+      patientInfo = Object.assign({}, patientInfo, data.patientInfo || {});
+
+      await saveKey('dialyse:entries', entries);
+      await saveKey('material:bestand', bestand);
+      await saveKey('bestellung:settings', settings);
+      await saveKey('patient:info', patientInfo);
+
+      document.getElementById('p_name').value = patientInfo.name || '';
+      document.getElementById('s_lieferdatum').value = settings.naechste_lieferung || '';
+      document.getElementById('s_vorlauf').value = settings.vorlaufzeit;
+      document.getElementById('s_intervall').value = settings.lieferintervall;
+      document.getElementById('s_reserve').value = settings.reservetage;
+      document.getElementById('s_email').value = settings.email || '';
+      document.getElementById('m_seife').value = settings.manual_seife || 0;
+      document.getElementById('m_desinfektion').value = settings.manual_desinfektion || 0;
+      document.getElementById('m_hygienetuecher').value = settings.manual_hygienetuecher || 0;
+
+      renderProtokoll();
+      renderStock();
+      renderDeliveryList();
+      lastRecommendation = null;
+
+      document.getElementById('backupInfo').textContent = 'Sicherung vom ' + fmtDate(data.exportedAt) + ' erfolgreich eingespielt.';
+      showToast('Sicherung eingespielt');
+    };
+    reader.readAsText(file);
+  }
+
+  document.getElementById('btnExportBackup').addEventListener('click', exportBackup);
+  document.getElementById('btnImportBackup').addEventListener('click', ()=>{
+    document.getElementById('importFileInput').click();
+  });
+  document.getElementById('importFileInput').addEventListener('change', (e)=>{
+    const file = e.target.files[0];
+    if(file) importBackupFile(file);
+    e.target.value = '';
+  });
+
   async function init(){
     entries = await loadKey('dialyse:entries', []);
     const loadedBestand = await loadKey('material:bestand', null);

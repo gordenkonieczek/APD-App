@@ -258,18 +258,18 @@
 
   <!-- ================= BESTELLUNG ================= -->
   <section class="view" id="view-bestellung">
-    <div class="eyebrow">Lieferung &amp; Reserve</div>
+    <div class="eyebrow">Monatlicher Bestellzyklus</div>
     <div class="card">
+      <p class="sub">Du bestellst einmal im Monat. Trage den Termin deiner nächsten Bestellung ein – die App schlägt dir vor, welche Mengen du dabei bestellen solltest.</p>
       <div class="row2">
-        <div class="field"><label>Nächste Lieferung</label><input type="date" id="s_lieferdatum"></div>
+        <div class="field"><label>Nächster Bestelltag</label><input type="date" id="s_bestelltag"></div>
         <div class="field"><label>Liefervorlauf (Tage)</label><input type="number" id="s_vorlauf" value="14" min="0"></div>
       </div>
       <div class="row2">
-        <div class="field"><label>Lieferintervall (Tage)</label><input type="number" id="s_intervall" value="30" min="1"></div>
+        <div class="field"><label>Bestellintervall (Tage)</label><input type="number" id="s_intervall" value="30" min="1"></div>
         <div class="field"><label>Reserve (Tage)</label><input type="number" id="s_reserve" value="5" min="0"></div>
       </div>
       <div class="field"><label>E-Mail für Bestellung</label><input type="email" id="s_email" placeholder="bestellung@lieferant.de"></div>
-      <p class="sub" style="margin:2px 0 12px;">„Nächste Lieferung“ wird nur für die Bestellmengen-Berechnung genutzt. Wann du spätestens bestellen musst, ermittelt die App unten direkt aus deinem Verbrauch.</p>
       <button class="btn btn-ghost" id="btnCalc">Empfehlung berechnen</button>
     </div>
 
@@ -335,7 +335,7 @@
 
   let entries = [];
   let bestand = {};
-  let settings = { lieferintervall:30, reservetage:5, vorlaufzeit:14, naechste_lieferung:'', email:'', manual_seife:0, manual_desinfektion:0, manual_hygienetuecher:0 };
+  let settings = { lieferintervall:30, reservetage:5, vorlaufzeit:14, naechster_bestelltag:'', email:'', manual_seife:0, manual_desinfektion:0, manual_hygienetuecher:0 };
   let patientInfo = { name:'' };
 
   ITEMS.forEach(i => bestand[i.key] = 0);
@@ -510,9 +510,12 @@
     doc.setFontSize(10);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(60,60,60);
-    doc.text('Name, Vorname: ' + (patientInfo.name || '—'), 14, 29);
-    doc.text('Erstellt am: ' + fmtDate(new Date()), 140, 29);
+    const nameLines = doc.splitTextToSize('Name, Vorname: ' + (patientInfo.name || '—'), 182);
+    doc.text(nameLines, 14, 29);
+    let y = 29 + (nameLines.length - 1) * 4.6 + 6;
+    doc.text('Erstellt am: ' + fmtDate(new Date()), 14, y);
     doc.setTextColor(0,0,0);
+    return y + 6; // nächste freie Y-Position für den Aufrufer
   }
 
   // ---------- tabs ----------
@@ -743,9 +746,9 @@
     const bis = document.getElementById('p_bis').value;
     const rangeEntries = protokollRangeEntries();
 
-    pdfHeader(doc, 'APD-Dialyse Protokoll');
+    const headY = pdfHeader(doc, 'APD-Dialyse Protokoll');
     doc.setFontSize(10);
-    doc.text('Woche: von ' + fmtDate(von) + '  bis  ' + fmtDate(bis), 14, 35);
+    doc.text('Woche: von ' + fmtDate(von) + '  bis  ' + fmtDate(bis), 14, headY);
 
     const columns = [
       { header:'Datum', width:20 },
@@ -773,9 +776,9 @@
 
     if(rows.length === 0){
       doc.setFontSize(10);
-      doc.text('Keine Einträge im gewählten Zeitraum.', 14, 46);
+      doc.text('Keine Einträge im gewählten Zeitraum.', 14, headY + 11);
     } else {
-      drawPdfTable(doc, 14, 41, columns, rows);
+      drawPdfTable(doc, 14, headY + 6, columns, rows);
     }
 
     return doc;
@@ -894,7 +897,7 @@
   }
 
   function readSettings(){
-    settings.naechste_lieferung = document.getElementById('s_lieferdatum').value;
+    settings.naechster_bestelltag = document.getElementById('s_bestelltag').value;
     settings.vorlaufzeit = Number(document.getElementById('s_vorlauf').value || 0);
     settings.lieferintervall = Number(document.getElementById('s_intervall').value || 30);
     settings.reservetage = Number(document.getElementById('s_reserve').value || 0);
@@ -911,13 +914,17 @@
     const s = readSettings();
     const { rates, usingDefault, daysSpan, treatments } = computeRates();
     const today = new Date(); today.setHours(0,0,0,0);
-    let daysUntilDelivery = 0;
-    let lieferdatum = null;
-    if(s.naechste_lieferung){
-      lieferdatum = new Date(s.naechste_lieferung + 'T00:00:00');
+
+    let bestelltag = null, lieferdatum = null, daysUntilOrder = 0, daysUntilDelivery = 0;
+    if(s.naechster_bestelltag){
+      bestelltag = new Date(s.naechster_bestelltag + 'T00:00:00');
+      lieferdatum = new Date(bestelltag.getTime() + s.vorlaufzeit * 86400000);
+      daysUntilOrder = Math.round((bestelltag - today) / 86400000);
       daysUntilDelivery = Math.max(0, Math.round((lieferdatum - today) / 86400000));
     }
 
+    // Diese eine Bestellung muss den Bestand von der Lieferung bis zur übernächsten
+    // Lieferung (Bestellintervall) tragen und danach noch die Reserve übrig lassen.
     const results = ITEMS.map(it=>{
       const rate = rates[it.key] || 0;
       const currentStock = bestand[it.key] || 0;
@@ -925,23 +932,16 @@
       const need = rate * (s.lieferintervall + s.reservetage);
       const orderQty = Math.max(0, Math.ceil(need - stockAtDelivery));
       const daysOfSupply = rate > 0 ? currentStock / rate : Infinity;
-
-      // Spätester Bestelltermin: Bestand muss bis zum Eintreffen der Lieferung (Liefervorlauf)
-      // reichen und danach noch die gewünschte Reservemenge übrig lassen.
-      let mustOrderInDays = null;
-      let mustOrderDate = null;
-      if(rate > 0){
-        mustOrderInDays = Math.floor(daysOfSupply - s.vorlaufzeit - s.reservetage);
-        mustOrderDate = new Date(today.getTime() + mustOrderInDays * 86400000);
-      }
-      return { ...it, rate, currentStock, stockAtDelivery, orderQty, daysOfSupply, mustOrderInDays, mustOrderDate };
+      const reicht = rate > 0 ? (daysOfSupply >= daysUntilDelivery) : true;
+      return { ...it, rate, currentStock, stockAtDelivery, orderQty, daysOfSupply, reicht };
     });
 
-    const finite = results.filter(r => r.mustOrderDate !== null);
-    const critical = finite.length ? finite.reduce((a,b)=> a.mustOrderDate < b.mustOrderDate ? a : b) : null;
-    const spaetesterBestelltermin = critical ? critical.mustOrderDate : null;
+    // Kritischster Artikel: dessen Bestand am ehesten vor der Lieferung ausgeht
+    const finite = results.filter(r => r.rate > 0);
+    const critical = finite.length ? finite.reduce((a,b)=> a.daysOfSupply < b.daysOfSupply ? a : b) : null;
+    const risk = critical ? (critical.daysOfSupply < daysUntilDelivery) : false;
 
-    lastRecommendation = { results, daysUntilDelivery, lieferdatum, usingDefault, daysSpan, treatments, settings: {...s}, critical, spaetesterBestelltermin };
+    lastRecommendation = { results, bestelltag, lieferdatum, daysUntilOrder, daysUntilDelivery, usingDefault, daysSpan, treatments, settings: {...s}, critical, risk };
     return lastRecommendation;
   }
 
@@ -950,45 +950,53 @@
     const wrap = document.getElementById('recoWrap');
     const s = reco.settings;
     const critical = reco.critical;
-    const mustOrderInDays = critical ? critical.mustOrderInDays : null;
 
-    let rc;
-    if(mustOrderInDays === null){
-      rc = { color:'var(--primary)', label:'kein Verbrauch erfasst' };
-    } else if(mustOrderInDays <= 0){
-      rc = { color:'var(--danger)', label:'überfällig' };
-    } else if(mustOrderInDays <= 7){
-      rc = { color:'var(--warn)', label:'bald' };
+    let rc, ringLabel, ringValue;
+    if(!reco.bestelltag){
+      rc = { color:'var(--primary)', label:'Bestelltag fehlt' };
+      ringValue = '–'; ringLabel = 'Bestelltag eintragen';
+    } else if(reco.risk){
+      rc = { color:'var(--danger)', label:'reicht evtl. nicht bis Lieferung' };
+      ringValue = Math.max(0, Math.round(reco.daysUntilOrder));
+      ringLabel = 'Tage bis Bestelltag';
+    } else if(reco.daysUntilOrder <= 3){
+      rc = { color:'var(--warn)', label:'Bestelltag ist bald' };
+      ringValue = Math.max(0, Math.round(reco.daysUntilOrder));
+      ringLabel = 'Tage bis Bestelltag';
     } else {
-      rc = { color:'var(--primary)', label:'rechtzeitig' };
+      rc = { color:'var(--primary)', label:'im Plan' };
+      ringValue = Math.max(0, Math.round(reco.daysUntilOrder));
+      ringLabel = 'Tage bis Bestelltag';
     }
 
-    const maxDisplay = Math.max(30, s.vorlaufzeit + s.reservetage + 14);
-    const clampedDays = mustOrderInDays === null ? maxDisplay : Math.max(0, Math.min(maxDisplay, mustOrderInDays));
+    const maxDisplay = Math.max(30, s.lieferintervall);
+    const clampedDays = reco.bestelltag ? Math.max(0, Math.min(maxDisplay, reco.daysUntilOrder)) : maxDisplay;
     const pct = (clampedDays / maxDisplay) * 100;
     const circumference = 2 * Math.PI * 40;
     const dash = (pct/100) * circumference;
 
     let banner = '';
-    if(reco.usingDefault){
+    if(!reco.bestelltag){
+      banner = '<div class="banner warn"><span>📅</span><span>Bitte trage deinen nächsten Bestelltag ein, um Mengen vorzuschlagen.</span></div>';
+    } else if(reco.usingDefault){
       banner = '<div class="banner warn"><span>ℹ️</span><span>Noch keine Protokolldaten vorhanden – Empfehlung basiert auf der Annahme 1 Behandlung/Tag.</span></div>';
-    } else if(!critical){
-      banner = '<div class="banner warn"><span>ℹ️</span><span>Für keinen Artikel liegen genug Verbrauchsdaten vor, um einen Bestelltermin zu berechnen.</span></div>';
-    } else if(mustOrderInDays <= 0){
-      banner = '<div class="banner danger"><span>⚠️</span><span>Spätester Bestelltermin ist überschritten – bestelle <strong>' + critical.label + '</strong> jetzt!</span></div>';
+    } else if(reco.daysUntilOrder <= 0){
+      banner = '<div class="banner danger"><span>⚠️</span><span>Heute ist dein Bestelltag – jetzt die unten vorgeschlagenen Mengen bestellen!</span></div>';
+    } else if(reco.risk){
+      banner = '<div class="banner danger"><span>⚠️</span><span><strong>' + critical.label + '</strong> reicht voraussichtlich nicht bis zur Lieferung am ' + fmtDate(reco.lieferdatum) + ' – ggf. früher nachbestellen.</span></div>';
     } else {
-      banner = '<div class="banner ok"><span>✓</span><span>Spätestens bestellen am <strong>' + fmtDate(reco.spaetesterBestelltermin) + '</strong> (kritisch: ' + critical.label + ', in ' + mustOrderInDays + ' Tagen)</span></div>';
+      banner = '<div class="banner ok"><span>✓</span><span>Nächster Bestelltag: <strong>' + fmtDate(reco.bestelltag) + '</strong> (Lieferung ca. ' + fmtDate(reco.lieferdatum) + ')</span></div>';
     }
 
     const rows = reco.results.map(r=>{
       const stockCell = r.currentStock < 0 ? '<span class="neg">' + fmt(r.currentStock) + '</span>' : fmt(r.currentStock);
       const orderCell = r.orderQty > 0 ? '<strong>' + fmt(r.orderQty) + '</strong>' : '<span class="muted">0</span>';
-      const deadlineCell = r.mustOrderDate ? fmtDate(r.mustOrderDate) : '–';
-      return '<tr><td>' + r.label + '</td><td>' + stockCell + '</td><td>' + fmt(r.rate,2) + '</td><td>' + deadlineCell + '</td><td>' + orderCell + '</td></tr>';
+      const warnCell = (r.rate > 0 && !r.reicht) ? ' ⚠️' : '';
+      return '<tr><td>' + r.label + warnCell + '</td><td>' + stockCell + '</td><td>' + fmt(r.rate,2) + '</td><td>' + orderCell + '</td></tr>';
     }).join('');
 
     wrap.innerHTML =
-      '<div class="eyebrow">Empfehlung</div>' +
+      '<div class="eyebrow">Bestellvorschlag</div>' +
       '<div class="card">' +
         banner +
         '<div class="ring-wrap" style="margin-bottom:6px;">' +
@@ -996,16 +1004,16 @@
             '<circle cx="48" cy="48" r="40" fill="none" stroke="var(--border)" stroke-width="8"/>' +
             '<circle cx="48" cy="48" r="40" fill="none" stroke="' + rc.color + '" stroke-width="8" stroke-linecap="round" ' +
               'stroke-dasharray="' + dash + ' ' + circumference + '" transform="rotate(-90 48 48)"/>' +
-            '<text x="48" y="44" text-anchor="middle" font-size="20" font-weight="700" fill="var(--ink)">' + (mustOrderInDays===null?'–':Math.max(0,Math.round(mustOrderInDays))) + '</text>' +
-            '<text x="48" y="60" text-anchor="middle" font-size="9" fill="var(--muted)">Tage bis Bestellung</text>' +
+            '<text x="48" y="44" text-anchor="middle" font-size="20" font-weight="700" fill="var(--ink)">' + ringValue + '</text>' +
+            '<text x="48" y="60" text-anchor="middle" font-size="8.5" fill="var(--muted)">' + ringLabel + '</text>' +
           '</svg>' +
           '<div class="info">' +
-            '<div class="big">' + (critical ? critical.label : 'Kein Verbrauch erfasst') + '</div>' +
-            '<div class="small">knappstes Material · Status: ' + rc.label + '</div>' +
+            '<div class="big">' + rc.label + '</div>' +
+            '<div class="small">' + (critical ? 'knappstes Material: ' + critical.label : 'noch kein Verbrauch erfasst') + '</div>' +
           '</div>' +
         '</div>' +
         '<div class="table-wrap">' +
-          '<table><thead><tr><th>Artikel</th><th>Bestand</th><th>⌀/Tag</th><th>bestellen bis</th><th>Menge</th></tr></thead>' +
+          '<table><thead><tr><th>Artikel</th><th>Bestand</th><th>⌀/Tag</th><th>Bestellmenge</th></tr></thead>' +
           '<tbody>' + rows + '</tbody></table>' +
         '</div>' +
         '<div class="btn-row" style="margin-top:14px;">' +
@@ -1013,14 +1021,26 @@
           '<button class="btn btn-ghost" id="btnPrint">Drucken</button>' +
         '</div>' +
         '<button class="btn btn-primary" id="btnMail" style="margin-top:10px;">Per E-Mail vorbereiten</button>' +
+        (reco.bestelltag ? '<button class="btn btn-ghost" id="btnRollForward" style="margin-top:10px;">Bestellt – nächsten Bestelltag planen (+' + s.lieferintervall + ' Tage)</button>' : '') +
       '</div>';
 
     document.getElementById('btnPdf').addEventListener('click', ()=> generatePdf('save'));
     document.getElementById('btnPrint').addEventListener('click', ()=> generatePdf('print'));
     document.getElementById('btnMail').addEventListener('click', prepareMail);
+    const rollBtn = document.getElementById('btnRollForward');
+    if(rollBtn){
+      rollBtn.addEventListener('click', async ()=>{
+        const next = new Date(reco.bestelltag.getTime() + s.lieferintervall * 86400000);
+        document.getElementById('s_bestelltag').value = isoDate(next);
+        readSettings();
+        await saveKey('bestellung:settings', settings);
+        renderRecommendation();
+        showToast('Nächster Bestelltag gesetzt: ' + fmtDate(next));
+      });
+    }
   }
 
-  ['s_lieferdatum','s_vorlauf','s_intervall','s_reserve','s_email','m_seife','m_desinfektion','m_hygienetuecher'].forEach(id=>{
+  ['s_bestelltag','s_vorlauf','s_intervall','s_reserve','s_email','m_seife','m_desinfektion','m_hygienetuecher'].forEach(id=>{
     document.getElementById(id).addEventListener('change', async ()=>{
       readSettings();
       await saveKey('bestellung:settings', settings);
@@ -1039,30 +1059,28 @@
     const doc = new jsPDF();
     const items = buildOrderLines();
     const s = lastRecommendation.settings;
-    const critical = lastRecommendation.critical;
 
-    pdfHeader(doc, 'Materialbestellung – APD-Dialyse');
+    const headY = pdfHeader(doc, 'Materialbestellung – APD-Dialyse');
     doc.setFontSize(10);
-    const headLine = critical
-      ? 'Spätester Bestelltermin: ' + fmtDate(lastRecommendation.spaetesterBestelltermin) + ' (kritisch: ' + critical.label + ')'
-      : 'Spätester Bestelltermin: noch nicht ermittelbar';
-    doc.text(headLine, 14, 35);
-    doc.text('Liefervorlauf: ' + s.vorlaufzeit + ' Tage   ·   Reserve: ' + s.reservetage + ' Tage', 14, 40);
+    const bestellLine = lastRecommendation.bestelltag
+      ? 'Bestelltag: ' + fmtDate(lastRecommendation.bestelltag) + '   ·   Lieferung ca.: ' + fmtDate(lastRecommendation.lieferdatum)
+      : 'Bestelltag: noch nicht eingetragen';
+    doc.text(bestellLine, 14, headY);
+    doc.text('Bestellintervall: ' + s.lieferintervall + ' Tage   ·   Reserve: ' + s.reservetage + ' Tage', 14, headY + 5);
 
     const columns = [
-      { header:'Artikel', width:46 },
-      { header:'Aktueller Bestand', width:32 },
-      { header:'⌀ Verbrauch/Tag', width:32 },
-      { header:'Bestellen bis', width:28 },
-      { header:'Bestellmenge', width:44 }
+      { header:'Artikel', width:56 },
+      { header:'Aktueller Bestand', width:36 },
+      { header:'⌀ Verbrauch/Tag', width:36 },
+      { header:'Bestellmenge', width:54 }
     ];
-    const rows = items.map(r => [r.label, fmt(r.currentStock), fmt(r.rate,2), r.mustOrderDate ? fmtDate(r.mustOrderDate) : '–', fmt(r.orderQty) + ' ' + r.unit]);
+    const rows = items.map(r => [r.label, fmt(r.currentStock), fmt(r.rate,2), fmt(r.orderQty) + ' ' + r.unit]);
 
     if(rows.length === 0){
       doc.setFontSize(10);
-      doc.text('Keine Bestellung erforderlich.', 14, 50);
+      doc.text('Keine Bestellung erforderlich.', 14, headY + 16);
     } else {
-      drawPdfTable(doc, 14, 46, columns, rows);
+      drawPdfTable(doc, 14, headY + 11, columns, rows);
     }
 
     if(action === 'print'){
@@ -1085,9 +1103,6 @@
     } else {
       items.forEach(r=>{ body += '- ' + r.label + ': ' + fmt(r.orderQty) + ' ' + r.unit + '\n'; });
       body += '\n';
-    }
-    if(lastRecommendation.critical){
-      body += 'Spätester Bestelltermin: ' + fmtDate(lastRecommendation.spaetesterBestelltermin) + '\n\n';
     }
     if(lastRecommendation.lieferdatum){
       body += 'Gewünschtes Lieferdatum: ' + fmtDate(lastRecommendation.lieferdatum) + '\n\n';
@@ -1150,7 +1165,7 @@
       await saveKey('patient:info', patientInfo);
 
       document.getElementById('p_name').value = patientInfo.name || '';
-      document.getElementById('s_lieferdatum').value = settings.naechste_lieferung || '';
+      document.getElementById('s_bestelltag').value = settings.naechster_bestelltag || '';
       document.getElementById('s_vorlauf').value = settings.vorlaufzeit;
       document.getElementById('s_intervall').value = settings.lieferintervall;
       document.getElementById('s_reserve').value = settings.reservetage;
@@ -1194,7 +1209,7 @@
     document.getElementById('p_von').value = week.von;
     document.getElementById('p_bis').value = week.bis;
 
-    document.getElementById('s_lieferdatum').value = settings.naechste_lieferung || '';
+    document.getElementById('s_bestelltag').value = settings.naechster_bestelltag || '';
     document.getElementById('s_vorlauf').value = settings.vorlaufzeit;
     document.getElementById('s_intervall').value = settings.lieferintervall;
     document.getElementById('s_reserve').value = settings.reservetage;

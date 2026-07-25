@@ -26,17 +26,20 @@
     --safe-b: env(safe-area-inset-bottom, 0px);
   }
   *{box-sizing:border-box;}
-  html,body{margin:0;padding:0;}
+  html,body{margin:0;padding:0;height:100%;overscroll-behavior:none;}
   body{
     background:var(--bg);
     color:var(--ink);
     font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
     -webkit-font-smoothing:antialiased;
-    padding-bottom:calc(78px + var(--safe-b));
-    min-height:100vh;
+    overflow:hidden;
+  }
+  .app-shell{
+    display:flex; flex-direction:column;
+    height:100vh; height:100dvh;
   }
   header.app-header{
-    position:sticky; top:0; z-index:20;
+    flex:0 0 auto; z-index:20;
     background:rgba(242,246,245,0.92);
     backdrop-filter:blur(10px);
     padding:calc(18px + env(safe-area-inset-top,0px)) 20px 14px;
@@ -48,7 +51,10 @@
   header.app-header p{
     margin:2px 0 0; font-size:13px; color:var(--muted);
   }
-  main{ padding:16px 16px 8px; max-width:640px; margin:0 auto; }
+  main{
+    flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    padding:16px 16px calc(24px + var(--safe-b)); max-width:640px; margin:0 auto; width:100%;
+  }
   section.view{ display:none; animation:fade .2s ease; }
   section.view.active{ display:block; }
   @keyframes fade{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);} }
@@ -123,7 +129,7 @@
   .ring-wrap .info .small{ font-size:12.5px; color:var(--muted); margin-top:2px; }
 
   nav.tabbar{
-    position:fixed; bottom:0; left:0; right:0; z-index:30;
+    flex:0 0 auto; z-index:30;
     background:rgba(255,255,255,0.94); backdrop-filter:blur(12px);
     border-top:1px solid var(--border);
     display:flex; padding:8px 6px calc(8px + var(--safe-b));
@@ -150,6 +156,7 @@
 </style>
 </head>
 <body>
+<div class="app-shell">
 
 <header class="app-header">
   <h1 id="headerTitle">Protokoll</h1>
@@ -299,8 +306,6 @@
 
 </main>
 
-<div class="toast" id="toast"></div>
-
 <nav class="tabbar">
   <button data-view="protokoll" class="active">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h6a1 1 0 0 1 1 1v1H8V3a1 1 0 0 1 1-1Z"/><path d="M7 4h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M9 10h6M9 14h6M9 18h3"/></svg>
@@ -315,6 +320,9 @@
     Bestellung
   </button>
 </nav>
+
+</div>
+<div class="toast" id="toast"></div>
 
 <script>
 (function(){
@@ -458,16 +466,22 @@
       let x = startX;
       doc.setFontSize(fontSize);
       doc.setFont(undefined, 'bold');
-      doc.setFillColor(228, 241, 238);
-      doc.setDrawColor(150, 175, 170);
       columns.forEach(col=>{
-        doc.rect(x, yy, col.width, headerH, 'FD');
+        // Füllen und Rahmen als zwei getrennte Operationen statt der kombinierten
+        // 'FD'-Operation zeichnen – Safaris PDF-Betrachter (PDFKit) stellt die
+        // kombinierte Operation in manchen Fällen als schwarze Fläche dar.
+        doc.setFillColor(228, 241, 238);
+        doc.rect(x, yy, col.width, headerH, 'F');
+        doc.setDrawColor(150, 175, 170);
+        doc.setLineWidth(0.2);
+        doc.rect(x, yy, col.width, headerH, 'S');
+        doc.setTextColor(20, 40, 38);
         const lines = wrapCell(col.header, col.width - 3);
         doc.text(lines, x + 1.5, yy + 4.2);
         x += col.width;
       });
       doc.setFont(undefined, 'normal');
-      doc.setFillColor(255,255,255);
+      doc.setTextColor(0,0,0);
       return yy + headerH;
     }
 
@@ -486,9 +500,11 @@
 
       let x = startX;
       doc.setFontSize(fontSize);
+      doc.setTextColor(0,0,0);
       columns.forEach((col, i)=>{
         doc.setDrawColor(150, 175, 170);
-        doc.rect(x, y, col.width, rh);
+        doc.setLineWidth(0.2);
+        doc.rect(x, y, col.width, rh, 'S');
         doc.text(cellLines[i], x + 1.5, y + 4.2);
         x += col.width;
       });

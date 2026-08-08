@@ -289,14 +289,11 @@
 
     <div id="recoWrap"></div>
 
-    <div class="eyebrow">Manueller Verbrauch (nicht behandlungsgebunden)</div>
+    <div class="eyebrow">Manueller Verbrauch</div>
     <div class="card">
-      <p class="sub">Seife, Desinfektion und Hygienetücher werden nicht automatisch abgezogen. Gib hier deinen ungefähren Tagesverbrauch an, damit die Empfehlung sie berücksichtigt.</p>
-      <div class="row3">
-        <div class="field"><label>Seife /Tag</label><input type="number" step="0.01" id="m_seife" value="0"></div>
-        <div class="field"><label>Desinf. /Tag</label><input type="number" step="0.01" id="m_desinfektion" value="0"></div>
-        <div class="field"><label>Tücher /Tag</label><input type="number" step="0.01" id="m_hygienetuecher" value="0"></div>
-      </div>
+      <p class="sub">Seife, Desinfektionsmittel, Hygienetücher und Pflasterrolle werden nicht automatisch abgezogen – trage hier deinen ungefähren Tagesverbrauch ein. Bei ES Kompresse und Wundverband kommt der eingetragene Wert zum automatisch aus dem Protokoll berechneten Verbrauch hinzu (z.&nbsp;B. für Verbrauch außerhalb der Dialyse).</p>
+      <div id="manualConsumptionList"></div>
+      <button class="btn btn-primary" id="btnSaveManualConsumption" style="margin-top:14px;">Verbrauch speichern</button>
     </div>
 
     <div class="eyebrow">Datensicherung</div>
@@ -340,22 +337,25 @@
     { key:'beutel_gruen',  label:'Beutel grün',        unit:'Stk', manual:false },
     { key:'kassette',      label:'Kassette',           unit:'Stk', manual:false },
     { key:'kappe',         label:'Kappe',              unit:'Stk', manual:false },
-    { key:'es_kompresse',  label:'ES Kompresse',       unit:'Stk', manual:false },
-    { key:'wundverband',   label:'Wundverband',        unit:'Stk', manual:false },
+    { key:'es_kompresse',  label:'ES Kompresse',       unit:'Stk', manual:false, extraConsumption:true },
+    { key:'wundverband',   label:'Wundverband',        unit:'Stk', manual:false, extraConsumption:true },
     { key:'seife',         label:'Seife',              unit:'Stk', manual:true },
     { key:'desinfektion',  label:'Desinfektionsmittel',unit:'Stk', manual:true },
     { key:'hygienetuecher',label:'Hygienetücher',      unit:'Pkg', manual:true },
+    { key:'pflasterrolle', label:'Pflasterrolle',      unit:'Stk', manual:true },
   ];
   const FIXED = { kassette:1, kappe:1, es_kompresse:4, wundverband:1 };
+  const MANUAL_CONSUMPTION_ITEMS = ITEMS.filter(i => i.manual || i.extraConsumption);
 
   let entries = [];
   let bestand = {};
-  let settings = { lieferintervall:30, reservetage:5, vorlaufzeit:14, naechster_bestelltag:'', email:'', manual_seife:0, manual_desinfektion:0, manual_hygienetuecher:0, kartongroessen:{} };
+  let settings = { lieferintervall:30, reservetage:5, vorlaufzeit:14, naechster_bestelltag:'', email:'', kartongroessen:{}, manualConsumption:{} };
   let patientInfo = { name:'' };
   let orderOverrides = {};
 
   ITEMS.forEach(i => bestand[i.key] = 0);
   ITEMS.forEach(i => settings.kartongroessen[i.key] = 1);
+  MANUAL_CONSUMPTION_ITEMS.forEach(i => settings.manualConsumption[i.key] = 0);
 
   // ---------- storage (IndexedDB – funktioniert auch als eigenständige Home-Bildschirm-App) ----------
   const DB_NAME = 'apd_protokoll_db';
@@ -906,16 +906,39 @@
     showToast('Kartongrößen gespeichert');
   });
 
+  function renderManualConsumptionList(){
+    const wrap = document.getElementById('manualConsumptionList');
+    wrap.innerHTML = MANUAL_CONSUMPTION_ITEMS.map(it=>{
+      const val = (settings.manualConsumption && settings.manualConsumption[it.key]) || 0;
+      const hint = it.extraConsumption ? 'zusätzl./Tag' : it.unit + '/Tag';
+      return '<div class="stock-row">' +
+        '<div class="name">' + it.label + (it.extraConsumption ? '<small>zusätzlich zum Protokoll</small>' : '') + '</div>' +
+        '<input type="number" step="0.01" min="0" data-key="' + it.key + '" value="' + val + '"> <span class="muted" style="font-size:10.5px;width:62px;">' + hint + '</span>' +
+      '</div>';
+    }).join('');
+  }
+
+  document.getElementById('btnSaveManualConsumption').addEventListener('click', async ()=>{
+    if(!settings.manualConsumption) settings.manualConsumption = {};
+    document.querySelectorAll('#manualConsumptionList input').forEach(inp=>{
+      settings.manualConsumption[inp.dataset.key] = Math.max(0, Number(inp.value || 0));
+    });
+    await saveKey('bestellung:settings', settings);
+    renderManualConsumptionList();
+    if(lastRecommendation) renderRecommendation();
+    showToast('Verbrauch gespeichert');
+  });
+
   // ---------- Bestellung ----------
   function computeRates(){
-    const manualRates = {
-      seife: Number(document.getElementById('m_seife').value || 0),
-      desinfektion: Number(document.getElementById('m_desinfektion').value || 0),
-      hygienetuecher: Number(document.getElementById('m_hygienetuecher').value || 0)
-    };
+    const mc = settings.manualConsumption || {};
+    const manualOnly = { seife: mc.seife||0, desinfektion: mc.desinfektion||0, hygienetuecher: mc.hygienetuecher||0, pflasterrolle: mc.pflasterrolle||0 };
+    const extraEs = mc.es_kompresse || 0;
+    const extraWv = mc.wundverband || 0;
+
     if(entries.length === 0){
       return {
-        rates: { beutel_gelb:0, beutel_gruen:0, kassette:1, kappe:1, es_kompresse:4, wundverband:1, ...manualRates },
+        rates: { beutel_gelb:0, beutel_gruen:0, kassette:1, kappe:1, es_kompresse: 4 + extraEs, wundverband: 1 + extraWv, ...manualOnly },
         usingDefault: true, daysSpan:0, treatments:0
       };
     }
@@ -936,9 +959,9 @@
         beutel_gruen: gruen / daysSpan,
         kassette: (n * FIXED.kassette) / daysSpan,
         kappe: (n * FIXED.kappe) / daysSpan,
-        es_kompresse: (n * FIXED.es_kompresse) / daysSpan,
-        wundverband: (n * FIXED.wundverband) / daysSpan,
-        ...manualRates
+        es_kompresse: (n * FIXED.es_kompresse) / daysSpan + extraEs,
+        wundverband: (n * FIXED.wundverband) / daysSpan + extraWv,
+        ...manualOnly
       },
       usingDefault: false, daysSpan, treatments: n
     };
@@ -950,9 +973,6 @@
     settings.lieferintervall = Number(document.getElementById('s_intervall').value || 30);
     settings.reservetage = Number(document.getElementById('s_reserve').value || 0);
     settings.email = document.getElementById('s_email').value;
-    settings.manual_seife = Number(document.getElementById('m_seife').value || 0);
-    settings.manual_desinfektion = Number(document.getElementById('m_desinfektion').value || 0);
-    settings.manual_hygienetuecher = Number(document.getElementById('m_hygienetuecher').value || 0);
     return settings;
   }
 
@@ -1176,7 +1196,7 @@
     }
   }
 
-  ['s_bestelltag','s_vorlauf','s_intervall','s_reserve','s_email','m_seife','m_desinfektion','m_hygienetuecher'].forEach(id=>{
+  ['s_bestelltag','s_vorlauf','s_intervall','s_reserve','s_email'].forEach(id=>{
     document.getElementById(id).addEventListener('change', async ()=>{
       readSettings();
       await saveKey('bestellung:settings', settings);
@@ -1309,14 +1329,12 @@
       document.getElementById('s_intervall').value = settings.lieferintervall;
       document.getElementById('s_reserve').value = settings.reservetage;
       document.getElementById('s_email').value = settings.email || '';
-      document.getElementById('m_seife').value = settings.manual_seife || 0;
-      document.getElementById('m_desinfektion').value = settings.manual_desinfektion || 0;
-      document.getElementById('m_hygienetuecher').value = settings.manual_hygienetuecher || 0;
 
       renderProtokoll();
       renderStock();
       renderDeliveryList();
       renderKartonList();
+      renderManualConsumptionList();
       lastRecommendation = null;
 
       document.getElementById('backupInfo').textContent = 'Sicherung vom ' + fmtDate(data.exportedAt) + ' erfolgreich eingespielt.';
@@ -1355,15 +1373,13 @@
     document.getElementById('s_intervall').value = settings.lieferintervall;
     document.getElementById('s_reserve').value = settings.reservetage;
     document.getElementById('s_email').value = settings.email || '';
-    document.getElementById('m_seife').value = settings.manual_seife || 0;
-    document.getElementById('m_desinfektion').value = settings.manual_desinfektion || 0;
-    document.getElementById('m_hygienetuecher').value = settings.manual_hygienetuecher || 0;
 
     setDefaultDateTime();
     renderProtokoll();
     renderStock();
     renderDeliveryList();
     renderKartonList();
+    renderManualConsumptionList();
   }
 
   init();

@@ -272,17 +272,15 @@
 
   <!-- ================= BESTELLUNG ================= -->
   <section class="view" id="view-bestellung">
-    <div class="eyebrow">Monatlicher Bestellzyklus</div>
+    <div class="eyebrow">Bestellparameter</div>
     <div class="card">
-      <p class="sub">Du bestellst einmal im Monat. Trage den Termin deiner nächsten Bestellung ein – die App schlägt dir vor, welche Mengen du dabei bestellen solltest.</p>
+      <p class="sub">Trage diese drei Werte einmal ein – die App berechnet daraus laufend, wann du spätestens bestellen musst und welche Mengen.</p>
       <div class="row2">
-        <div class="field"><label>Nächster Bestelltag</label><input type="date" id="s_bestelltag"></div>
         <div class="field"><label>Liefervorlauf (Tage)</label><input type="number" id="s_vorlauf" value="14" min="0"></div>
+        <div class="field"><label>Lieferintervall (Tage)</label><input type="number" id="s_intervall" value="30" min="1"></div>
       </div>
-      <div class="row2">
-        <div class="field"><label>Bestellintervall (Tage)</label><input type="number" id="s_intervall" value="30" min="1"></div>
-        <div class="field"><label>Reserve (Tage)</label><input type="number" id="s_reserve" value="5" min="0"></div>
-      </div>
+      <div class="field"><label>Reserve (Tage)</label><input type="number" id="s_reserve" value="5" min="0"></div>
+      <p class="sub" style="margin:2px 0 12px;">Liefervorlauf: Zeit zwischen Bestellung und Eintreffen der Lieferung. Lieferintervall: Zeitraum, den eine Bestellung überbrücken muss, bis die nächste eintrifft. Reserve: Sicherheitspuffer danach.</p>
       <div class="field"><label>E-Mail für Bestellung</label><input type="email" id="s_email" placeholder="bestellung@lieferant.de"></div>
       <button class="btn btn-ghost" id="btnCalc">Empfehlung berechnen</button>
     </div>
@@ -349,7 +347,7 @@
 
   let entries = [];
   let bestand = {};
-  let settings = { lieferintervall:30, reservetage:5, vorlaufzeit:14, naechster_bestelltag:'', email:'', kartongroessen:{}, dailyConsumption:{} };
+  let settings = { lieferintervall:30, reservetage:5, vorlaufzeit:14, email:'', kartongroessen:{}, dailyConsumption:{} };
   let patientInfo = { name:'' };
   let orderOverrides = {};
 
@@ -968,7 +966,6 @@
   }
 
   function readSettings(){
-    settings.naechster_bestelltag = document.getElementById('s_bestelltag').value;
     settings.vorlaufzeit = Number(document.getElementById('s_vorlauf').value || 0);
     settings.lieferintervall = Number(document.getElementById('s_intervall').value || 30);
     settings.reservetage = Number(document.getElementById('s_reserve').value || 0);
@@ -999,23 +996,47 @@
     const { rates, usingDefault, daysSpan, treatments } = computeRates();
     const today = new Date(); today.setHours(0,0,0,0);
 
-    let bestelltag = null, lieferdatum = null, daysUntilOrder = 0, daysUntilDelivery = 0;
-    if(s.naechster_bestelltag){
-      bestelltag = new Date(s.naechster_bestelltag + 'T00:00:00');
-      lieferdatum = new Date(bestelltag.getTime() + s.vorlaufzeit * 86400000);
-      daysUntilOrder = Math.round((bestelltag - today) / 86400000);
+    // Schritt 1: Für jeden Artikel den spätesten Bestelltermin ermitteln – der
+    // Bestand muss bis zum Eintreffen der Lieferung (Liefervorlauf) reichen und
+    // danach noch die Reserve übrig lassen.
+    const perItem = ITEMS.map(it=>{
+      const rate = rates[it.key] || 0;
+      const currentStock = bestand[it.key] || 0;
+      const daysOfSupply = rate > 0 ? currentStock / rate : Infinity;
+      let mustOrderInDays = null, mustOrderDate = null;
+      if(rate > 0){
+        mustOrderInDays = Math.floor(daysOfSupply - s.vorlaufzeit - s.reservetage);
+        mustOrderDate = new Date(today.getTime() + mustOrderInDays * 86400000);
+      }
+      return { key: it.key, label: it.label, rate, currentStock, daysOfSupply, mustOrderInDays, mustOrderDate };
+    });
+
+    // Schritt 2: Der insgesamt späteste Termin, um ALLES gemeinsam zu bestellen,
+    // richtet sich nach dem knappsten Artikel (frühester Termin gewinnt).
+    const withDates = perItem.filter(r => r.mustOrderDate !== null);
+    const critical = withDates.length ? withDates.reduce((a,b)=> a.mustOrderDate < b.mustOrderDate ? a : b) : null;
+    const spaetesterBestelltermin = critical ? critical.mustOrderDate : null;
+    const mustOrderInDays = critical ? critical.mustOrderInDays : null;
+
+    // Schritt 3: Für die Mengenberechnung wird angenommen, dass zu diesem
+    // Termin (oder heute, falls er schon verstrichen ist) tatsächlich bestellt wird.
+    let lieferdatum = null, daysUntilDelivery = 0;
+    if(spaetesterBestelltermin){
+      const effectiveOrderDate = spaetesterBestelltermin > today ? spaetesterBestelltermin : today;
+      lieferdatum = new Date(effectiveOrderDate.getTime() + s.vorlaufzeit * 86400000);
       daysUntilDelivery = Math.max(0, Math.round((lieferdatum - today) / 86400000));
     }
 
     // Diese eine Bestellung muss den Bestand von der Lieferung bis zur übernächsten
-    // Lieferung (Bestellintervall) tragen und danach noch die Reserve übrig lassen.
+    // Lieferung (Lieferintervall) tragen und danach noch die Reserve übrig lassen.
     const results = ITEMS.map(it=>{
-      const rate = rates[it.key] || 0;
-      const currentStock = bestand[it.key] || 0;
+      const base = perItem.find(p => p.key === it.key);
+      const rate = base.rate;
+      const currentStock = base.currentStock;
       const stockAtDelivery = currentStock - rate * daysUntilDelivery;
       const need = rate * (s.lieferintervall + s.reservetage);
       const orderQty = Math.max(0, Math.ceil(need - stockAtDelivery));
-      const daysOfSupply = rate > 0 ? currentStock / rate : Infinity;
+      const daysOfSupply = base.daysOfSupply;
       const reicht = rate > 0 ? (daysOfSupply >= daysUntilDelivery) : true;
       const cartonSize = Math.max(1, (s.kartongroessen && s.kartongroessen[it.key]) || 1);
       const orderCartons = orderQty > 0 ? Math.ceil(orderQty / cartonSize) : 0;
@@ -1028,28 +1049,12 @@
       const finalUnits = cartonSize > 1 ? finalDisplay * cartonSize : finalDisplay;
       const isOverridden = hasOverride && finalDisplay !== suggestedDisplay;
 
-      // Spätester Bestelltermin für diesen Artikel: Bestand muss bis zum Eintreffen
-      // der nächsten Lieferung (Liefervorlauf) reichen und danach noch die Reserve lassen.
-      let mustOrderInDays = null, mustOrderDate = null;
-      if(rate > 0){
-        mustOrderInDays = Math.floor(daysOfSupply - s.vorlaufzeit - s.reservetage);
-        mustOrderDate = new Date(today.getTime() + mustOrderInDays * 86400000);
-      }
-
-      return { ...it, rate, currentStock, stockAtDelivery, orderQty, daysOfSupply, reicht, cartonSize, orderCartons, orderUnitsRounded, suggestedDisplay, finalDisplay, finalUnits, isOverridden, mustOrderInDays, mustOrderDate };
+      return { ...it, rate, currentStock, stockAtDelivery, orderQty, daysOfSupply, reicht, cartonSize, orderCartons, orderUnitsRounded, suggestedDisplay, finalDisplay, finalUnits, isOverridden, mustOrderInDays: base.mustOrderInDays, mustOrderDate: base.mustOrderDate };
     });
 
-    // Kritischster Artikel: dessen Bestand am ehesten vor der Lieferung ausgeht
-    const finite = results.filter(r => r.rate > 0);
-    const critical = finite.length ? finite.reduce((a,b)=> a.daysOfSupply < b.daysOfSupply ? a : b) : null;
     const risk = critical ? (critical.daysOfSupply < daysUntilDelivery) : false;
 
-    // Empfohlener spätester nächster Bestelltermin (unabhängig vom eingetragenen Bestelltag)
-    const orderDeadlines = results.filter(r => r.mustOrderDate !== null);
-    const criticalForOrder = orderDeadlines.length ? orderDeadlines.reduce((a,b)=> a.mustOrderDate < b.mustOrderDate ? a : b) : null;
-    const empfohlenerBestelltag = criticalForOrder ? criticalForOrder.mustOrderDate : null;
-
-    lastRecommendation = { results, bestelltag, lieferdatum, daysUntilOrder, daysUntilDelivery, usingDefault, daysSpan, treatments, settings: {...s}, critical, risk, criticalForOrder, empfohlenerBestelltag };
+    lastRecommendation = { results, spaetesterBestelltermin, mustOrderInDays, lieferdatum, daysUntilDelivery, usingDefault, daysSpan, treatments, settings: {...s}, critical, risk };
     return lastRecommendation;
   }
 
@@ -1058,49 +1063,46 @@
     const wrap = document.getElementById('recoWrap');
     const s = reco.settings;
     const critical = reco.critical;
+    const mustOrderInDays = reco.mustOrderInDays;
 
     let rc, ringLabel, ringValue;
-    if(!reco.bestelltag){
-      rc = { color:'var(--primary)', label:'Bestelltag fehlt' };
-      ringValue = '–'; ringLabel = 'Bestelltag eintragen';
-    } else if(reco.risk){
-      rc = { color:'var(--danger)', label:'reicht evtl. nicht bis Lieferung' };
-      ringValue = Math.max(0, Math.round(reco.daysUntilOrder));
-      ringLabel = 'Tage bis Bestelltag';
-    } else if(reco.daysUntilOrder <= 3){
-      rc = { color:'var(--warn)', label:'Bestelltag ist bald' };
-      ringValue = Math.max(0, Math.round(reco.daysUntilOrder));
-      ringLabel = 'Tage bis Bestelltag';
+    if(reco.usingDefault){
+      rc = { color:'var(--warn)', label:'noch keine Protokolldaten' };
+      ringValue = '–'; ringLabel = 'Verbrauch unbekannt';
+    } else if(!critical){
+      rc = { color:'var(--primary)', label:'kein Verbrauch erfasst' };
+      ringValue = '–'; ringLabel = 'Tagesverbrauch eintragen';
+    } else if(mustOrderInDays <= 0){
+      rc = { color:'var(--danger)', label:'jetzt bestellen' };
+      ringValue = 0; ringLabel = 'Tage bis Bestelltermin';
+    } else if(mustOrderInDays <= 3){
+      rc = { color:'var(--warn)', label:'Bestelltermin ist bald' };
+      ringValue = mustOrderInDays; ringLabel = 'Tage bis Bestelltermin';
     } else {
       rc = { color:'var(--primary)', label:'im Plan' };
-      ringValue = Math.max(0, Math.round(reco.daysUntilOrder));
-      ringLabel = 'Tage bis Bestelltag';
+      ringValue = mustOrderInDays; ringLabel = 'Tage bis Bestelltermin';
     }
 
-    const maxDisplay = Math.max(30, s.lieferintervall);
-    const clampedDays = reco.bestelltag ? Math.max(0, Math.min(maxDisplay, reco.daysUntilOrder)) : maxDisplay;
+    const maxDisplay = Math.max(30, s.vorlaufzeit + s.reservetage + 14);
+    const clampedDays = (mustOrderInDays === null) ? maxDisplay : Math.max(0, Math.min(maxDisplay, mustOrderInDays));
     const pct = (clampedDays / maxDisplay) * 100;
     const circumference = 2 * Math.PI * 40;
     const dash = (pct/100) * circumference;
 
     let banner = '';
-    if(!reco.bestelltag){
-      banner = '<div class="banner warn"><span>📅</span><span>Bitte trage deinen nächsten Bestelltag ein, um Mengen vorzuschlagen.</span></div>';
-    } else if(reco.usingDefault){
+    if(reco.usingDefault){
       banner = '<div class="banner warn"><span>ℹ️</span><span>Noch keine Protokolldaten vorhanden – Empfehlung basiert auf der Annahme 1 Behandlung/Tag.</span></div>';
-    } else if(reco.daysUntilOrder <= 0){
-      banner = '<div class="banner danger"><span>⚠️</span><span>Heute ist dein Bestelltag – jetzt die unten vorgeschlagenen Mengen bestellen!</span></div>';
-    } else if(reco.risk){
-      banner = '<div class="banner danger"><span>⚠️</span><span><strong>' + critical.label + '</strong> reicht voraussichtlich nicht bis zur Lieferung am ' + fmtDate(reco.lieferdatum) + ' – ggf. früher nachbestellen.</span></div>';
+    } else if(!critical){
+      banner = '<div class="banner warn"><span>ℹ️</span><span>Für keinen Artikel liegt genug Verbrauch vor. Trage unter "Verbrauch pro Dialysetag" Werte ein oder protokolliere Behandlungen.</span></div>';
+    } else if(mustOrderInDays <= 0){
+      banner = '<div class="banner danger"><span>⚠️</span><span><strong>' + critical.label + '</strong> ist der Engpass – Bestelltermin ist erreicht oder überschritten. Jetzt die unten vorgeschlagenen Mengen bestellen!</span></div>';
     } else {
-      banner = '<div class="banner ok"><span>✓</span><span>Nächster Bestelltag: <strong>' + fmtDate(reco.bestelltag) + '</strong> (Lieferung ca. ' + fmtDate(reco.lieferdatum) + ')</span></div>';
+      banner = '<div class="banner ok"><span>✓</span><span>Spätester Bestelltermin: <strong>' + fmtDate(reco.spaetesterBestelltermin) + '</strong> (in ' + mustOrderInDays + ' Tagen, Grundlage: ' + critical.label + ') – Lieferung ca. ' + fmtDate(reco.lieferdatum) + '</span></div>';
     }
 
-    // Empfohlener spätester nächster Bestelltermin – unabhängig vom eingetragenen Bestelltag
-    let deadlineBanner = '';
-    if(reco.empfohlenerBestelltag){
-      const zuSpaet = reco.bestelltag && reco.bestelltag > reco.empfohlenerBestelltag;
-      deadlineBanner = '<div class="banner ' + (zuSpaet ? 'danger' : 'ok') + '"><span>' + (zuSpaet ? '⚠️' : '💡') + '</span><span>Empfohlener spätester nächster Bestelltermin: <strong>' + fmtDate(reco.empfohlenerBestelltag) + '</strong> (Grundlage: ' + reco.criticalForOrder.label + ')' + (zuSpaet ? ' – dein eingetragener Bestelltag liegt danach!' : '') + ' <button id="btnAdoptDeadline" class="btn btn-ghost" style="display:inline-block;width:auto;padding:4px 10px;margin-left:4px;font-size:12px;vertical-align:middle;">Übernehmen</button></span></div>';
+    let riskBanner = '';
+    if(reco.risk){
+      riskBanner = '<div class="banner danger"><span>⚠️</span><span>Bei aktuellem Verbrauch reicht <strong>' + critical.label + '</strong> voraussichtlich nicht bis zur berechneten Lieferung – ggf. früher bestellen oder Bestand aufstocken.</span></div>';
     }
 
     const rows = reco.results.map(r=>{
@@ -1122,7 +1124,7 @@
       '<div class="eyebrow">Bestellvorschlag</div>' +
       '<div class="card">' +
         banner +
-        deadlineBanner +
+        riskBanner +
         '<div class="ring-wrap" style="margin-bottom:6px;">' +
           '<svg width="96" height="96" viewBox="0 0 96 96">' +
             '<circle cx="48" cy="48" r="40" fill="none" stroke="var(--border)" stroke-width="8"/>' +
@@ -1147,7 +1149,6 @@
           '<button class="btn btn-ghost" id="btnPrint">Drucken</button>' +
         '</div>' +
         '<button class="btn btn-primary" id="btnMail" style="margin-top:10px;">Per E-Mail vorbereiten</button>' +
-        (reco.bestelltag ? '<button class="btn btn-ghost" id="btnRollForward" style="margin-top:10px;">Bestellt – nächsten Bestelltag planen (+' + s.lieferintervall + ' Tage)</button>' : '') +
       '</div>';
 
     document.querySelectorAll('.orderOverrideInput').forEach(inp=>{
@@ -1169,34 +1170,12 @@
       });
     }
 
-    const adoptBtn = document.getElementById('btnAdoptDeadline');
-    if(adoptBtn){
-      adoptBtn.addEventListener('click', async ()=>{
-        document.getElementById('s_bestelltag').value = isoDate(reco.empfohlenerBestelltag);
-        readSettings();
-        await saveKey('bestellung:settings', settings);
-        renderRecommendation();
-        showToast('Bestelltag übernommen: ' + fmtDate(reco.empfohlenerBestelltag));
-      });
-    }
-
     document.getElementById('btnPdf').addEventListener('click', ()=> generatePdf('save'));
     document.getElementById('btnPrint').addEventListener('click', ()=> generatePdf('print'));
     document.getElementById('btnMail').addEventListener('click', prepareMail);
-    const rollBtn = document.getElementById('btnRollForward');
-    if(rollBtn){
-      rollBtn.addEventListener('click', async ()=>{
-        const next = new Date(reco.bestelltag.getTime() + s.lieferintervall * 86400000);
-        document.getElementById('s_bestelltag').value = isoDate(next);
-        readSettings();
-        await saveKey('bestellung:settings', settings);
-        renderRecommendation();
-        showToast('Nächster Bestelltag gesetzt: ' + fmtDate(next));
-      });
-    }
   }
 
-  ['s_bestelltag','s_vorlauf','s_intervall','s_reserve','s_email'].forEach(id=>{
+  ['s_vorlauf','s_intervall','s_reserve','s_email'].forEach(id=>{
     document.getElementById(id).addEventListener('change', async ()=>{
       readSettings();
       await saveKey('bestellung:settings', settings);
@@ -1218,11 +1197,11 @@
 
     const headY = pdfHeader(doc, 'Materialbestellung – APD-Dialyse');
     doc.setFontSize(10);
-    const bestellLine = lastRecommendation.bestelltag
-      ? 'Bestelltag: ' + fmtDate(lastRecommendation.bestelltag) + '   ·   Lieferung ca.: ' + fmtDate(lastRecommendation.lieferdatum)
-      : 'Bestelltag: noch nicht eingetragen';
+    const bestellLine = lastRecommendation.spaetesterBestelltermin
+      ? 'Spätester Bestelltermin: ' + fmtDate(lastRecommendation.spaetesterBestelltermin) + '   ·   Lieferung ca.: ' + fmtDate(lastRecommendation.lieferdatum)
+      : 'Spätester Bestelltermin: noch nicht ermittelbar';
     doc.text(bestellLine, 14, headY);
-    doc.text('Bestellintervall: ' + s.lieferintervall + ' Tage   ·   Reserve: ' + s.reservetage + ' Tage', 14, headY + 5);
+    doc.text('Liefervorlauf: ' + s.vorlaufzeit + ' Tage   ·   Lieferintervall: ' + s.lieferintervall + ' Tage   ·   Reserve: ' + s.reservetage + ' Tage', 14, headY + 5);
 
     const columns = [
       { header:'Artikel', width:56 },
@@ -1324,7 +1303,6 @@
       await saveKey('bestellung:overrides', orderOverrides);
 
       document.getElementById('p_name').value = patientInfo.name || '';
-      document.getElementById('s_bestelltag').value = settings.naechster_bestelltag || '';
       document.getElementById('s_vorlauf').value = settings.vorlaufzeit;
       document.getElementById('s_intervall').value = settings.lieferintervall;
       document.getElementById('s_reserve').value = settings.reservetage;
@@ -1368,7 +1346,6 @@
     document.getElementById('p_von').value = week.von;
     document.getElementById('p_bis').value = week.bis;
 
-    document.getElementById('s_bestelltag').value = settings.naechster_bestelltag || '';
     document.getElementById('s_vorlauf').value = settings.vorlaufzeit;
     document.getElementById('s_intervall').value = settings.lieferintervall;
     document.getElementById('s_reserve').value = settings.reservetage;

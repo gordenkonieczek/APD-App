@@ -248,6 +248,13 @@
 
   <!-- ================= BESTAND ================= -->
   <section class="view" id="view-bestand">
+    <div class="eyebrow">Verbrauch pro Dialysetag</div>
+    <div class="card">
+      <p class="sub">Trage ein, wie viel jedes Material an einem Dialysetag (PD Pause = Nein) verbraucht wird. Beim Speichern eines Protokolleintrags wird der Bestand automatisch genau um diese Menge verringert – bei PD Pause = Ja wird nichts abgezogen.</p>
+      <div id="dailyConsumptionList"></div>
+      <button class="btn btn-primary" id="btnSaveDailyConsumption" style="margin-top:14px;">Verbrauch speichern</button>
+    </div>
+
     <div class="eyebrow">Lieferung erhalten</div>
     <div class="card">
       <p class="sub">Trage die Mengen aus deiner Lieferung ein – sie werden zum aktuellen Bestand addiert.</p>
@@ -257,7 +264,7 @@
 
     <div class="eyebrow">Materialbestand</div>
     <div class="card">
-      <p class="sub">Trage deinen aktuellen Lagerbestand ein. Beutel, Kassette, Kappe, ES Kompresse und Wundverband werden bei jedem Protokolleintrag automatisch abgezogen.</p>
+      <p class="sub">Trage deinen aktuellen Lagerbestand ein. Alle Artikel werden an Dialysetagen automatisch gemäß "Verbrauch pro Dialysetag" abgezogen.</p>
       <div id="stockList"></div>
       <button class="btn btn-primary" id="btnSaveStock" style="margin-top:14px;">Bestand speichern</button>
     </div>
@@ -288,13 +295,6 @@
     </div>
 
     <div id="recoWrap"></div>
-
-    <div class="eyebrow">Manueller Verbrauch</div>
-    <div class="card">
-      <p class="sub">Seife, Desinfektionsmittel, Hygienetücher und Pflasterrolle werden nicht automatisch abgezogen – trage hier deinen ungefähren Tagesverbrauch ein. Bei ES Kompresse und Wundverband kommt der eingetragene Wert zum automatisch aus dem Protokoll berechneten Verbrauch hinzu (z.&nbsp;B. für Verbrauch außerhalb der Dialyse).</p>
-      <div id="manualConsumptionList"></div>
-      <button class="btn btn-primary" id="btnSaveManualConsumption" style="margin-top:14px;">Verbrauch speichern</button>
-    </div>
 
     <div class="eyebrow">Datensicherung</div>
     <div class="card">
@@ -333,29 +333,29 @@
   "use strict";
 
   const ITEMS = [
-    { key:'beutel_gelb',   label:'Beutel gelb',        unit:'Stk', manual:false },
-    { key:'beutel_gruen',  label:'Beutel grün',        unit:'Stk', manual:false },
-    { key:'kassette',      label:'Kassette',           unit:'Stk', manual:false },
-    { key:'kappe',         label:'Kappe',              unit:'Stk', manual:false },
-    { key:'es_kompresse',  label:'ES Kompresse',       unit:'Stk', manual:false, extraConsumption:true },
-    { key:'wundverband',   label:'Wundverband',        unit:'Stk', manual:false, extraConsumption:true },
-    { key:'seife',         label:'Seife',              unit:'Stk', manual:true },
-    { key:'desinfektion',  label:'Desinfektionsmittel',unit:'Stk', manual:true },
-    { key:'hygienetuecher',label:'Hygienetücher',      unit:'Pkg', manual:true },
-    { key:'pflasterrolle', label:'Pflasterrolle',      unit:'Stk', manual:true },
+    { key:'beutel_gelb',   label:'Beutel gelb',        unit:'Stk' },
+    { key:'beutel_gruen',  label:'Beutel grün',        unit:'Stk' },
+    { key:'kassette',      label:'Kassette',           unit:'Stk' },
+    { key:'kappe',         label:'Kappe',              unit:'Stk' },
+    { key:'es_kompresse',  label:'ES Kompresse',       unit:'Stk' },
+    { key:'wundverband',   label:'Wundverband',        unit:'Stk' },
+    { key:'seife',         label:'Seife',              unit:'Stk' },
+    { key:'desinfektion',  label:'Desinfektionsmittel',unit:'Stk' },
+    { key:'hygienetuecher',label:'Hygienetücher',      unit:'Pkg' },
+    { key:'pflasterrolle', label:'Pflasterrolle',      unit:'Stk' },
   ];
-  const FIXED = { kassette:1, kappe:1, es_kompresse:4, wundverband:1 };
-  const MANUAL_CONSUMPTION_ITEMS = ITEMS.filter(i => i.manual || i.extraConsumption);
+  // Sinnvolle Startwerte für den Tagesverbrauch (frei editierbar in "Verbrauch pro Dialysetag")
+  const DEFAULT_DAILY_CONSUMPTION = { beutel_gelb:0, beutel_gruen:0, kassette:1, kappe:1, es_kompresse:4, wundverband:1, seife:0, desinfektion:0, hygienetuecher:0, pflasterrolle:0 };
 
   let entries = [];
   let bestand = {};
-  let settings = { lieferintervall:30, reservetage:5, vorlaufzeit:14, naechster_bestelltag:'', email:'', kartongroessen:{}, manualConsumption:{} };
+  let settings = { lieferintervall:30, reservetage:5, vorlaufzeit:14, naechster_bestelltag:'', email:'', kartongroessen:{}, dailyConsumption:{} };
   let patientInfo = { name:'' };
   let orderOverrides = {};
 
   ITEMS.forEach(i => bestand[i.key] = 0);
   ITEMS.forEach(i => settings.kartongroessen[i.key] = 1);
-  MANUAL_CONSUMPTION_ITEMS.forEach(i => settings.manualConsumption[i.key] = 0);
+  ITEMS.forEach(i => settings.dailyConsumption[i.key] = DEFAULT_DAILY_CONSUMPTION[i.key] || 0);
 
   // ---------- storage (IndexedDB – funktioniert auch als eigenständige Home-Bildschirm-App) ----------
   const DB_NAME = 'apd_protokoll_db';
@@ -575,8 +575,29 @@
   // ---------- Protokoll: save entry ----------
   let editingId = null;
 
-  function consumptionForEntry(e){
-    const c = { beutel_gelb:0, beutel_gruen:0, kassette:FIXED.kassette, kappe:FIXED.kappe, es_kompresse:FIXED.es_kompresse, wundverband:FIXED.wundverband };
+  function zeroConsumption(){
+    const c = {};
+    ITEMS.forEach(i => c[i.key] = 0);
+    return c;
+  }
+
+  // Verbrauch, der beim (Neu-)Speichern eines Eintrags gebucht wird: an einem
+  // Dialysetag (PD Pause = Nein) wird für jedes Material die aktuell eingestellte
+  // Menge aus "Verbrauch pro Dialysetag" abgezogen; bei Pause = Ja nichts.
+  function computeEntryConsumption(e){
+    if(e.pause === 'ja') return zeroConsumption();
+    const c = {};
+    ITEMS.forEach(i => c[i.key] = Number((settings.dailyConsumption && settings.dailyConsumption[i.key]) || 0));
+    return c;
+  }
+
+  // Für das Zurückbuchen (Bearbeiten/Löschen) wird immer der ursprünglich
+  // gebuchte Snapshot verwendet – nicht die evtl. inzwischen geänderten
+  // aktuellen Einstellungen. Ältere Einträge ohne Snapshot nutzen eine
+  // Legacy-Berechnung (feste Werte + eingetragene Beutelfarben).
+  function resolveEntryConsumption(e){
+    if(e.consumptionSnapshot) return e.consumptionSnapshot;
+    const c = { beutel_gelb:0, beutel_gruen:0, kassette:1, kappe:1, es_kompresse:4, wundverband:1, seife:0, desinfektion:0, hygienetuecher:0, pflasterrolle:0 };
     if(e.b1_farbe === 'gelb') c.beutel_gelb += Number(e.b1_anzahl||0);
     if(e.b1_farbe === 'gruen') c.beutel_gruen += Number(e.b1_anzahl||0);
     if(e.b2_farbe === 'gelb') c.beutel_gelb += Number(e.b2_anzahl||0);
@@ -650,18 +671,19 @@
       volumen: document.getElementById('f_volumen').value,
       bemerkung: document.getElementById('f_bemerkung').value
     };
+    e.consumptionSnapshot = computeEntryConsumption(e);
 
     if(editingId){
       const idx = entries.findIndex(x=>x.id===editingId);
       if(idx !== -1){
-        const oldCons = consumptionForEntry(entries[idx]);
+        const oldCons = resolveEntryConsumption(entries[idx]);
         Object.keys(oldCons).forEach(k => { bestand[k] = (bestand[k]||0) + oldCons[k]; });
         entries[idx] = e;
       }
     } else {
       entries.push(e);
     }
-    const newCons = consumptionForEntry(e);
+    const newCons = e.consumptionSnapshot;
     Object.keys(newCons).forEach(k => { bestand[k] = (bestand[k]||0) - newCons[k]; });
 
     await saveKey('dialyse:entries', entries);
@@ -684,7 +706,7 @@
     const idx = entries.findIndex(e=>e.id===id);
     if(idx === -1) return;
     const e = entries[idx];
-    const cons = consumptionForEntry(e);
+    const cons = resolveEntryConsumption(e);
     Object.keys(cons).forEach(k => { bestand[k] = (bestand[k]||0) + cons[k]; });
     entries.splice(idx,1);
     await saveKey('dialyse:entries', entries);
@@ -839,7 +861,7 @@
     wrap.innerHTML = ITEMS.map(it=>{
       const val = bestand[it.key] || 0;
       return '<div class="stock-row">' +
-        '<div class="name">' + it.label + (it.manual ? '<small>manuell erfasst</small>' : '') + '</div>' +
+        '<div class="name">' + it.label + '</div>' +
         '<input type="number" step="1" data-key="' + it.key + '" value="' + val + '"> <span class="muted" style="font-size:12px;width:28px;">' + it.unit + '</span>' +
       '</div>';
     }).join('');
@@ -906,65 +928,43 @@
     showToast('Kartongrößen gespeichert');
   });
 
-  function renderManualConsumptionList(){
-    const wrap = document.getElementById('manualConsumptionList');
-    wrap.innerHTML = MANUAL_CONSUMPTION_ITEMS.map(it=>{
-      const val = (settings.manualConsumption && settings.manualConsumption[it.key]) || 0;
-      const hint = it.extraConsumption ? 'zusätzl./Tag' : it.unit + '/Tag';
+  function renderDailyConsumptionList(){
+    const wrap = document.getElementById('dailyConsumptionList');
+    wrap.innerHTML = ITEMS.map(it=>{
+      const val = (settings.dailyConsumption && settings.dailyConsumption[it.key]) || 0;
       return '<div class="stock-row">' +
-        '<div class="name">' + it.label + (it.extraConsumption ? '<small>zusätzlich zum Protokoll</small>' : '') + '</div>' +
-        '<input type="number" step="0.01" min="0" data-key="' + it.key + '" value="' + val + '"> <span class="muted" style="font-size:10.5px;width:62px;">' + hint + '</span>' +
+        '<div class="name">' + it.label + '</div>' +
+        '<input type="number" step="0.01" min="0" data-key="' + it.key + '" value="' + val + '"> <span class="muted" style="font-size:10.5px;width:56px;">' + it.unit + '/Tag</span>' +
       '</div>';
     }).join('');
   }
 
-  document.getElementById('btnSaveManualConsumption').addEventListener('click', async ()=>{
-    if(!settings.manualConsumption) settings.manualConsumption = {};
-    document.querySelectorAll('#manualConsumptionList input').forEach(inp=>{
-      settings.manualConsumption[inp.dataset.key] = Math.max(0, Number(inp.value || 0));
+  document.getElementById('btnSaveDailyConsumption').addEventListener('click', async ()=>{
+    if(!settings.dailyConsumption) settings.dailyConsumption = {};
+    document.querySelectorAll('#dailyConsumptionList input').forEach(inp=>{
+      settings.dailyConsumption[inp.dataset.key] = Math.max(0, Number(inp.value || 0));
     });
     await saveKey('bestellung:settings', settings);
-    renderManualConsumptionList();
+    renderDailyConsumptionList();
     if(lastRecommendation) renderRecommendation();
-    showToast('Verbrauch gespeichert');
+    showToast('Verbrauch pro Dialysetag gespeichert');
   });
 
   // ---------- Bestellung ----------
   function computeRates(){
-    const mc = settings.manualConsumption || {};
-    const manualOnly = { seife: mc.seife||0, desinfektion: mc.desinfektion||0, hygienetuecher: mc.hygienetuecher||0, pflasterrolle: mc.pflasterrolle||0 };
-    const extraEs = mc.es_kompresse || 0;
-    const extraWv = mc.wundverband || 0;
-
+    const dc = settings.dailyConsumption || {};
     if(entries.length === 0){
-      return {
-        rates: { beutel_gelb:0, beutel_gruen:0, kassette:1, kappe:1, es_kompresse: 4 + extraEs, wundverband: 1 + extraWv, ...manualOnly },
-        usingDefault: true, daysSpan:0, treatments:0
-      };
+      const rates = {};
+      ITEMS.forEach(i => rates[i.key] = dc[i.key] || 0);
+      return { rates, usingDefault: true, daysSpan:0, treatments:0 };
     }
     const times = entries.map(e=> new Date(e.datum).getTime()).filter(t=>!isNaN(t));
     const minD = Math.min(...times), maxD = Math.max(...times);
     const daysSpan = Math.max(1, Math.round((maxD - minD) / 86400000) + 1);
-    let gelb = 0, gruen = 0;
-    entries.forEach(e=>{
-      if(e.b1_farbe === 'gelb') gelb += Number(e.b1_anzahl||0);
-      if(e.b1_farbe === 'gruen') gruen += Number(e.b1_anzahl||0);
-      if(e.b2_farbe === 'gelb') gelb += Number(e.b2_anzahl||0);
-      if(e.b2_farbe === 'gruen') gruen += Number(e.b2_anzahl||0);
-    });
-    const n = entries.length;
-    return {
-      rates: {
-        beutel_gelb: gelb / daysSpan,
-        beutel_gruen: gruen / daysSpan,
-        kassette: (n * FIXED.kassette) / daysSpan,
-        kappe: (n * FIXED.kappe) / daysSpan,
-        es_kompresse: (n * FIXED.es_kompresse) / daysSpan + extraEs,
-        wundverband: (n * FIXED.wundverband) / daysSpan + extraWv,
-        ...manualOnly
-      },
-      usingDefault: false, daysSpan, treatments: n
-    };
+    const dialyseTage = entries.filter(e => e.pause !== 'ja').length;
+    const rates = {};
+    ITEMS.forEach(i => rates[i.key] = (dialyseTage * (dc[i.key] || 0)) / daysSpan);
+    return { rates, usingDefault: false, daysSpan, treatments: entries.length };
   }
 
   function readSettings(){
@@ -1334,7 +1334,7 @@
       renderStock();
       renderDeliveryList();
       renderKartonList();
-      renderManualConsumptionList();
+      renderDailyConsumptionList();
       lastRecommendation = null;
 
       document.getElementById('backupInfo').textContent = 'Sicherung vom ' + fmtDate(data.exportedAt) + ' erfolgreich eingespielt.';
@@ -1379,7 +1379,7 @@
     renderStock();
     renderDeliveryList();
     renderKartonList();
-    renderManualConsumptionList();
+    renderDailyConsumptionList();
   }
 
   init();

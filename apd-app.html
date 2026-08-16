@@ -1168,6 +1168,7 @@
     }
 
     let lastOrderLine = '';
+    let intervalWarning = '';
     if(lastOrder.date){
       const daysSince = Math.round((new Date() - new Date(lastOrder.date + 'T00:00:00')) / 86400000);
       let text = 'Letzte Bestellung: ' + fmtDate(lastOrder.date) + ' (vor ' + daysSince + ' Tagen)';
@@ -1179,6 +1180,12 @@
         if(overdue) text += ' ⚠️ noch nicht als Bestand erfasst?';
       }
       lastOrderLine = '<p class="sub" style="margin:0 0 12px;">' + text + '</p>';
+
+      // Plausibilitäts-Check: liegt die letzte Bestellung deutlich länger zurück
+      // als das eingestellte Lieferintervall, stimmt evtl. etwas nicht mehr überein.
+      if(daysSince > s.lieferintervall + 3){
+        intervalWarning = '<div class="banner warn"><span>ℹ️</span><span>Seit der letzten Bestellung sind ' + daysSince + ' Tage vergangen – dein Lieferintervall ist aber auf ' + s.lieferintervall + ' Tage eingestellt. Falls du zwischenzeitlich bestellt hast, trage das oben unter "Letzte Bestellung" nach.</span></div>';
+      }
     }
 
     const rows = reco.results.map(r=>{
@@ -1201,6 +1208,7 @@
         banner +
         riskBanner +
         lastOrderLine +
+        intervalWarning +
         '<div class="ring-wrap" style="margin-bottom:6px;">' +
           '<svg width="96" height="96" viewBox="0 0 96 96">' +
             '<circle cx="48" cy="48" r="40" fill="none" stroke="var(--border)" stroke-width="8"/>' +

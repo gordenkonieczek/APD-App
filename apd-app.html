@@ -272,6 +272,12 @@
 
   <!-- ================= BESTELLUNG ================= -->
   <section class="view" id="view-bestellung">
+    <div class="eyebrow">Bestellvorschlag</div>
+    <div id="recoWrap"></div>
+  </section>
+
+  <!-- ================= EINSTELLUNGEN ================= -->
+  <section class="view" id="view-einstellungen">
     <div class="eyebrow">Bestellparameter</div>
     <div class="card">
       <p class="sub">Trage diese drei Werte einmal ein – die App berechnet daraus laufend, wann du spätestens bestellen musst und welche Mengen.</p>
@@ -282,7 +288,6 @@
       <div class="field"><label>Reserve (Tage)</label><input type="number" id="s_reserve" value="5" min="0"></div>
       <p class="sub" style="margin:2px 0 12px;">Liefervorlauf: Zeit zwischen Bestellung und Eintreffen der Lieferung. Lieferintervall: Zeitraum, den eine Bestellung überbrücken muss, bis die nächste eintrifft. Reserve: Sicherheitspuffer danach.</p>
       <div class="field"><label>E-Mail für Bestellung</label><input type="email" id="s_email" placeholder="bestellung@lieferant.de"></div>
-      <button class="btn btn-ghost" id="btnCalc">Empfehlung berechnen</button>
     </div>
 
     <div class="eyebrow">Kartongrößen</div>
@@ -291,8 +296,6 @@
       <div id="kartonList"></div>
       <button class="btn btn-primary" id="btnSaveKarton" style="margin-top:14px;">Kartongrößen speichern</button>
     </div>
-
-    <div id="recoWrap"></div>
 
     <div class="eyebrow">Datensicherung</div>
     <div class="card">
@@ -321,6 +324,10 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="7" width="14" height="10" rx="1"/><path d="M15 10h4l3 3v4h-7"/><circle cx="6" cy="19" r="1.6"/><circle cx="17.5" cy="19" r="1.6"/></svg>
     Bestellung
   </button>
+  <button data-view="einstellungen">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+    Einstellungen
+  </button>
 </nav>
 
 </div>
@@ -343,7 +350,7 @@
     { key:'pflasterrolle', label:'Pflasterrolle',      unit:'Stk' },
   ];
   // Sinnvolle Startwerte für den Tagesverbrauch (frei editierbar in "Verbrauch pro Dialysetag")
-  const DEFAULT_DAILY_CONSUMPTION = { beutel_gelb:0, beutel_gruen:0, kassette:1, kappe:1, es_kompresse:4, wundverband:1, seife:0, desinfektion:0, hygienetuecher:0, pflasterrolle:0 };
+  const DEFAULT_DAILY_CONSUMPTION = { beutel_gelb:1, beutel_gruen:1, kassette:1, kappe:1, es_kompresse:4, wundverband:1, seife:0, desinfektion:0, hygienetuecher:0, pflasterrolle:0 };
 
   let entries = [];
   let bestand = {};
@@ -545,7 +552,8 @@
   const titles = {
     protokoll: ['Protokoll', 'APD-Dialyse Dokumentation'],
     bestand: ['Bestand', 'Materialverwaltung'],
-    bestellung: ['Bestellung', 'Nachbestell-Empfehlung']
+    bestellung: ['Bestellung', 'Nachbestell-Empfehlung'],
+    einstellungen: ['Einstellungen', 'Bestellparameter & mehr']
   };
   document.querySelectorAll('nav.tabbar button').forEach(btn=>{
     btn.addEventListener('click', ()=>{
@@ -1181,7 +1189,6 @@
       await saveKey('bestellung:settings', settings);
     });
   });
-  document.getElementById('btnCalc').addEventListener('click', renderRecommendation);
 
   function buildOrderLines(){
     if(!lastRecommendation) computeRecommendation();

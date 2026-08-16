@@ -300,8 +300,14 @@
         <div class="field"><label>Lieferintervall (Tage)</label><input type="number" id="s_intervall" value="30" min="1"></div>
       </div>
       <div class="field"><label>Reserve (Tage)</label><input type="number" id="s_reserve" value="5" min="0"></div>
-      <p class="sub" style="margin:2px 0 12px;">Liefervorlauf: Zeit zwischen Bestellung und Eintreffen der Lieferung. Lieferintervall: Zeitraum, den eine Bestellung überbrücken muss, bis die nächste eintrifft. Reserve: Sicherheitspuffer danach.</p>
+      <p class="sub" style="margin:2px 0 12px;">Liefervorlauf: Mindestzeit zwischen Bestellung und Eintreffen der Lieferung. Lieferintervall: Zeitraum, den eine Bestellung überbrücken muss, bis die nächste eintrifft. Reserve: Sicherheitspuffer danach.</p>
       <div class="field"><label>E-Mail für Bestellung</label><input type="email" id="s_email" placeholder="bestellung@lieferant.de"></div>
+    </div>
+
+    <div class="eyebrow">Lieferschema</div>
+    <div class="card">
+      <p class="sub">Lieferungen erfolgen nur montags in ungeraden Kalenderwochen (alle zwei Wochen). Der berechnete Liefertermin wird automatisch auf den nächsten passenden Montag nach Ablauf des Liefervorlaufs gerundet – dadurch kann die tatsächliche Wartezeit etwas länger als der Liefervorlauf ausfallen.</p>
+      <div id="deliveryScheduleList" style="font-size:13.5px;"></div>
     </div>
 
     <div class="eyebrow">Kartongrößen</div>
@@ -468,6 +474,43 @@
     const monday = new Date(now); monday.setDate(now.getDate() + diffToMonday);
     const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
     return { von: isoDate(monday), bis: isoDate(sunday) };
+  }
+  function isoWeekNumber(date){
+    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const dayNum = (d.getUTCDay() + 6) % 7; // Montag = 0
+    d.setUTCDate(d.getUTCDate() - dayNum + 3); // Donnerstag dieser Woche
+    const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+    const firstDayNum = (firstThursday.getUTCDay() + 6) % 7;
+    firstThursday.setUTCDate(firstThursday.getUTCDate() - firstDayNum + 3);
+    return 1 + Math.round((d - firstThursday) / (7 * 86400000));
+  }
+  // Liefertermin gemäß festem Lieferrhythmus: Montag einer ungeraden Kalenderwoche,
+  // frühestens nach der eingestellten Vorlaufzeit ab dem Bestelltag.
+  function nextDeliveryDate(orderDate, vorlaufTage){
+    let d = new Date(orderDate.getTime() + vorlaufTage * 86400000);
+    d.setHours(0,0,0,0);
+    const day = d.getDay(); // 0=So, 1=Mo, ...
+    const diffToMonday = (day === 1) ? 0 : ((8 - day) % 7);
+    d.setDate(d.getDate() + diffToMonday);
+    if(isoWeekNumber(d) % 2 === 0){
+      d.setDate(d.getDate() + 7);
+    }
+    return d;
+  }
+
+  function renderDeliverySchedule(){
+    const wrap = document.getElementById('deliveryScheduleList');
+    if(!wrap) return;
+    const today = new Date(); today.setHours(0,0,0,0);
+    let d = nextDeliveryDate(today, 0);
+    const dates = [];
+    for(let i=0;i<6;i++){
+      dates.push(new Date(d));
+      d = new Date(d.getTime() + 14*86400000);
+    }
+    wrap.innerHTML = dates.map(dt=>
+      '<div style="padding:5px 0;border-bottom:1px solid var(--border);">' + fmtDate(dt) + ' <span class="muted">(KW ' + isoWeekNumber(dt) + ')</span></div>'
+    ).join('');
   }
 
   // ---------- generic bordered PDF table (Papierprotokoll-Stil) ----------
@@ -1082,10 +1125,12 @@
 
     // Schritt 3: Für die Mengenberechnung wird angenommen, dass zu diesem
     // Termin (oder heute, falls er schon verstrichen ist) tatsächlich bestellt wird.
+    // Der Liefertermin selbst richtet sich nach dem festen Lieferrhythmus
+    // (Montag einer ungeraden Kalenderwoche, frühestens nach der Vorlaufzeit).
     let lieferdatum = null, daysUntilDelivery = 0;
     if(spaetesterBestelltermin){
       const effectiveOrderDate = spaetesterBestelltermin > today ? spaetesterBestelltermin : today;
-      lieferdatum = new Date(effectiveOrderDate.getTime() + s.vorlaufzeit * 86400000);
+      lieferdatum = nextDeliveryDate(effectiveOrderDate, s.vorlaufzeit);
       daysUntilDelivery = Math.max(0, Math.round((lieferdatum - today) / 86400000));
     }
 
@@ -1447,6 +1492,7 @@
     renderKartonList();
     renderDailyConsumptionList();
     renderLastOrderList();
+    renderDeliverySchedule();
   }
 
   init();

@@ -327,6 +327,8 @@
       <input type="file" id="importFileInput" accept="application/json" style="display:none;">
       <p class="sub" id="backupInfo" style="margin:10px 0 0;"></p>
     </div>
+
+    <p class="muted" style="text-align:center;font-size:12px;margin:8px 0 4px;">APD-Protokoll &amp; Bestand · Version <span id="appVersion"></span></p>
   </section>
 
 </main>
@@ -356,6 +358,9 @@
 <script>
 (function(){
   "use strict";
+
+  const APP_VERSION = '1.1.0';
+  const APP_VERSION_DATE = '2026-08-16';
 
   const ITEMS = [
     { key:'beutel_gelb',   label:'Beutel gelb',        unit:'Stk' },
@@ -1493,6 +1498,7 @@
     renderDailyConsumptionList();
     renderLastOrderList();
     renderDeliverySchedule();
+    document.getElementById('appVersion').textContent = APP_VERSION + ' (' + fmtDate(APP_VERSION_DATE) + ')';
   }
 
   init();

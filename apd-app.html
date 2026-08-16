@@ -274,6 +274,20 @@
   <section class="view" id="view-bestellung">
     <div class="eyebrow">Bestellvorschlag</div>
     <div id="recoWrap"></div>
+
+    <div class="eyebrow">Letzte Bestellung</div>
+    <div class="card">
+      <p class="sub">Trage ein, wann und wie viel du zuletzt bestellt hast – als Referenz für dich und Grundlage für "Tage seit letzter Bestellung" in der Empfehlung.</p>
+      <div class="row2">
+        <div class="field"><label>Bestelldatum</label><input type="date" id="lo_date"></div>
+        <div class="field"><label>Lieferung erwartet am</label><input type="date" id="lo_delivery"></div>
+      </div>
+      <div id="lastOrderList"></div>
+      <div class="btn-row" style="margin-top:6px;">
+        <button class="btn btn-ghost" id="btnCopyFromReco">Aktuellen Vorschlag übernehmen</button>
+        <button class="btn btn-primary" id="btnSaveLastOrder">Speichern</button>
+      </div>
+    </div>
   </section>
 
   <!-- ================= EINSTELLUNGEN ================= -->
@@ -357,6 +371,7 @@
   let settings = { lieferintervall:30, reservetage:5, vorlaufzeit:14, email:'', kartongroessen:{}, dailyConsumption:{} };
   let patientInfo = { name:'' };
   let orderOverrides = {};
+  let lastOrder = { date:'', delivery:'', items:{} };
 
   ITEMS.forEach(i => bestand[i.key] = 0);
   ITEMS.forEach(i => settings.kartongroessen[i.key] = 1);
@@ -956,6 +971,45 @@
     showToast('Verbrauch pro Dialysetag gespeichert');
   });
 
+  // ---------- Letzte Bestellung ----------
+  function renderLastOrderList(){
+    const wrap = document.getElementById('lastOrderList');
+    wrap.innerHTML = ITEMS.map(it=>{
+      const val = (lastOrder.items && lastOrder.items[it.key]) || 0;
+      return '<div class="stock-row">' +
+        '<div class="name">' + it.label + '</div>' +
+        '<input type="number" step="1" min="0" data-key="' + it.key + '" value="' + val + '"> <span class="muted" style="font-size:12px;width:28px;">' + it.unit + '</span>' +
+      '</div>';
+    }).join('');
+    document.getElementById('lo_date').value = lastOrder.date || '';
+    document.getElementById('lo_delivery').value = lastOrder.delivery || '';
+  }
+
+  document.getElementById('btnCopyFromReco').addEventListener('click', ()=>{
+    if(!lastRecommendation) computeRecommendation();
+    document.getElementById('lo_date').value = isoDate(new Date());
+    if(lastRecommendation.lieferdatum){
+      document.getElementById('lo_delivery').value = isoDate(lastRecommendation.lieferdatum);
+    }
+    document.querySelectorAll('#lastOrderList input').forEach(inp=>{
+      const r = lastRecommendation.results.find(x=>x.key === inp.dataset.key);
+      inp.value = r ? r.finalUnits : 0;
+    });
+    showToast('Mengen aus Vorschlag übernommen – bitte prüfen & speichern');
+  });
+
+  document.getElementById('btnSaveLastOrder').addEventListener('click', async ()=>{
+    lastOrder.date = document.getElementById('lo_date').value;
+    lastOrder.delivery = document.getElementById('lo_delivery').value;
+    lastOrder.items = {};
+    document.querySelectorAll('#lastOrderList input').forEach(inp=>{
+      lastOrder.items[inp.dataset.key] = Math.max(0, Number(inp.value || 0));
+    });
+    await saveKey('bestellung:lastorder', lastOrder);
+    if(lastRecommendation) renderRecommendation();
+    showToast('Letzte Bestellung gespeichert');
+  });
+
   // ---------- Bestellung ----------
   function computeRates(){
     const dc = settings.dailyConsumption || {};
@@ -1113,6 +1167,20 @@
       riskBanner = '<div class="banner danger"><span>⚠️</span><span>Bei aktuellem Verbrauch reicht <strong>' + critical.label + '</strong> voraussichtlich nicht bis zur berechneten Lieferung – ggf. früher bestellen oder Bestand aufstocken.</span></div>';
     }
 
+    let lastOrderLine = '';
+    if(lastOrder.date){
+      const daysSince = Math.round((new Date() - new Date(lastOrder.date + 'T00:00:00')) / 86400000);
+      let text = 'Letzte Bestellung: ' + fmtDate(lastOrder.date) + ' (vor ' + daysSince + ' Tagen)';
+      if(lastOrder.delivery){
+        const today0 = new Date(); today0.setHours(0,0,0,0);
+        const deliveryDate = new Date(lastOrder.delivery + 'T00:00:00');
+        const overdue = deliveryDate < today0;
+        text += ' · Lieferung ' + (overdue ? 'erwartet war' : 'erwartet') + ': ' + fmtDate(lastOrder.delivery);
+        if(overdue) text += ' ⚠️ noch nicht als Bestand erfasst?';
+      }
+      lastOrderLine = '<p class="sub" style="margin:0 0 12px;">' + text + '</p>';
+    }
+
     const rows = reco.results.map(r=>{
       const stockCell = r.currentStock < 0 ? '<span class="neg">' + fmt(r.currentStock) + '</span>' : fmt(r.currentStock);
       const warnCell = (r.rate > 0 && !r.reicht) ? ' ⚠️' : '';
@@ -1129,10 +1197,10 @@
     const anyOverride = Object.keys(orderOverrides).length > 0;
 
     wrap.innerHTML =
-      '<div class="eyebrow">Bestellvorschlag</div>' +
       '<div class="card">' +
         banner +
         riskBanner +
+        lastOrderLine +
         '<div class="ring-wrap" style="margin-bottom:6px;">' +
           '<svg width="96" height="96" viewBox="0 0 96 96">' +
             '<circle cx="48" cy="48" r="40" fill="none" stroke="var(--border)" stroke-width="8"/>' +
@@ -1266,7 +1334,8 @@
       entries,
       bestand,
       settings,
-      orderOverrides
+      orderOverrides,
+      lastOrder
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -1302,12 +1371,14 @@
       settings = Object.assign({}, settings, data.settings || {});
       patientInfo = Object.assign({}, patientInfo, data.patientInfo || {});
       orderOverrides = data.orderOverrides || {};
+      lastOrder = Object.assign({ date:'', delivery:'', items:{} }, data.lastOrder || {});
 
       await saveKey('dialyse:entries', entries);
       await saveKey('material:bestand', bestand);
       await saveKey('bestellung:settings', settings);
       await saveKey('patient:info', patientInfo);
       await saveKey('bestellung:overrides', orderOverrides);
+      await saveKey('bestellung:lastorder', lastOrder);
 
       document.getElementById('p_name').value = patientInfo.name || '';
       document.getElementById('s_vorlauf').value = settings.vorlaufzeit;
@@ -1320,6 +1391,7 @@
       renderDeliveryList();
       renderKartonList();
       renderDailyConsumptionList();
+      renderLastOrderList();
       lastRecommendation = null;
 
       document.getElementById('backupInfo').textContent = 'Sicherung vom ' + fmtDate(data.exportedAt) + ' erfolgreich eingespielt.';
@@ -1348,6 +1420,8 @@
     if(loadedPatient) Object.assign(patientInfo, loadedPatient);
     document.getElementById('p_name').value = patientInfo.name || '';
     orderOverrides = await loadKey('bestellung:overrides', {});
+    const loadedLastOrder = await loadKey('bestellung:lastorder', null);
+    if(loadedLastOrder) Object.assign(lastOrder, loadedLastOrder);
 
     const week = currentWeekRange();
     document.getElementById('p_von').value = week.von;
@@ -1364,6 +1438,7 @@
     renderDeliveryList();
     renderKartonList();
     renderDailyConsumptionList();
+    renderLastOrderList();
   }
 
   init();

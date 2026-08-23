@@ -277,6 +277,7 @@
 
     <div class="eyebrow">Neue Bestellung erfassen</div>
     <div class="card">
+      <p class="sub">Mengen in Kartons – wie im Bestellvorschlag.</p>
       <div class="row2">
         <div class="field"><label>Bestelldatum</label><input type="date" id="lo_date"></div>
         <div class="field"><label>Lieferung erwartet am</label><input type="date" id="lo_delivery"></div>
@@ -358,7 +359,7 @@
 (function(){
   "use strict";
 
-  const APP_VERSION = '1.4.0';
+  const APP_VERSION = '1.5.0';
   const APP_VERSION_DATE = '2026-08-23';
 
   const ITEMS = [
@@ -1005,12 +1006,16 @@
   });
 
   // ---------- Offene Bestellungen ----------
+  function cartonSizeOf(key){
+    return Math.max(1, (settings.kartongroessen && settings.kartongroessen[key]) || 1);
+  }
+
   function renderLastOrderList(){
     const wrap = document.getElementById('lastOrderList');
     wrap.innerHTML = ITEMS.map(it=>{
       return '<div class="stock-row">' +
         '<div class="name">' + it.label + '</div>' +
-        '<input type="number" step="1" min="0" data-key="' + it.key + '" value="0"> <span class="muted" style="font-size:12px;width:28px;">' + it.unit + '</span>' +
+        '<input type="number" step="1" min="0" data-key="' + it.key + '" value="0"> <span class="muted" style="font-size:12px;width:28px;">Kt.</span>' +
       '</div>';
     }).join('');
     document.getElementById('lo_date').value = '';
@@ -1019,7 +1024,12 @@
 
   function summarizeOrderItems(items){
     return ITEMS.filter(it => (items[it.key]||0) > 0)
-      .map(it => (items[it.key]) + ' ' + it.unit + ' ' + it.label)
+      .map(it=>{
+        const units = items[it.key];
+        const cs = cartonSizeOf(it.key);
+        const cartons = units / cs;
+        return fmt(cartons) + ' Kt. (≈ ' + fmt(units) + ' ' + it.unit + ') ' + it.label;
+      })
       .join(', ') || 'keine Mengen erfasst';
   }
 
@@ -1082,7 +1092,7 @@
     }
     document.querySelectorAll('#lastOrderList input').forEach(inp=>{
       const r = lastRecommendation.results.find(x=>x.key === inp.dataset.key);
-      inp.value = r ? r.finalUnits : 0;
+      inp.value = r ? r.finalDisplay : 0;
     });
     showToast('Mengen aus Vorschlag übernommen – bitte prüfen & speichern');
   });
@@ -1093,9 +1103,10 @@
     const items = {};
     let anyQty = false;
     document.querySelectorAll('#lastOrderList input').forEach(inp=>{
-      const qty = Math.max(0, Number(inp.value || 0));
-      items[inp.dataset.key] = qty;
-      if(qty > 0) anyQty = true;
+      const cartons = Math.max(0, Number(inp.value || 0));
+      const units = cartons * cartonSizeOf(inp.dataset.key);
+      items[inp.dataset.key] = units;
+      if(units > 0) anyQty = true;
     });
     if(!anyQty){ showToast('Bitte mindestens eine Menge eintragen'); return; }
     openOrders.push({

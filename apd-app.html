@@ -234,6 +234,7 @@
     <div class="eyebrow">Protokoll exportieren</div>
     <div class="card">
       <p class="sub">Erzeugt ein Wochenblatt im Stil des Papierprotokolls, mit Patientenname und Erstellungsdatum im Kopf.</p>
+      <p class="sub" id="protoExportInfo" style="margin:0 0 10px;"></p>
       <div class="row2">
         <div class="field"><label>Woche von</label><input type="date" id="p_von"></div>
         <div class="field"><label>bis</label><input type="date" id="p_bis"></div>
@@ -275,9 +276,14 @@
     <div class="eyebrow">Bestellvorschlag</div>
     <div id="recoWrap"></div>
 
-    <div class="eyebrow">Letzte Bestellung</div>
+    <div class="eyebrow">Offene Bestellungen</div>
+    <div class="card" id="openOrdersCard">
+      <p class="sub">Bereits aufgegebene, aber noch nicht gelieferte Bestellungen. Diese Mengen werden von der obigen Empfehlung abgezogen, damit du nicht doppelt bestellst. Sobald eine Lieferung ankommt: "Als geliefert verbuchen" tippen – die Mengen werden automatisch dem Bestand gutgeschrieben.</p>
+      <div id="openOrdersList"></div>
+    </div>
+
+    <div class="eyebrow">Neue Bestellung erfassen</div>
     <div class="card">
-      <p class="sub">Trage ein, wann und wie viel du zuletzt bestellt hast – als Referenz für dich und Grundlage für "Tage seit letzter Bestellung" in der Empfehlung.</p>
       <div class="row2">
         <div class="field"><label>Bestelldatum</label><input type="date" id="lo_date"></div>
         <div class="field"><label>Lieferung erwartet am</label><input type="date" id="lo_delivery"></div>
@@ -285,7 +291,7 @@
       <div id="lastOrderList"></div>
       <div class="btn-row" style="margin-top:6px;">
         <button class="btn btn-ghost" id="btnCopyFromReco">Aktuellen Vorschlag übernehmen</button>
-        <button class="btn btn-primary" id="btnSaveLastOrder">Speichern</button>
+        <button class="btn btn-primary" id="btnSaveLastOrder">Als offene Bestellung speichern</button>
       </div>
     </div>
   </section>
@@ -359,8 +365,8 @@
 (function(){
   "use strict";
 
-  const APP_VERSION = '1.1.0';
-  const APP_VERSION_DATE = '2026-08-16';
+  const APP_VERSION = '1.3.0';
+  const APP_VERSION_DATE = '2026-08-23';
 
   const ITEMS = [
     { key:'beutel_gelb',   label:'Beutel gelb',        unit:'Stk' },
@@ -382,7 +388,8 @@
   let settings = { lieferintervall:30, reservetage:5, vorlaufzeit:14, email:'', kartongroessen:{}, dailyConsumption:{} };
   let patientInfo = { name:'' };
   let orderOverrides = {};
-  let lastOrder = { date:'', delivery:'', items:{} };
+  let openOrders = [];
+  let protokollExportLog = { bis:'', exportedAt:'' };
 
   ITEMS.forEach(i => bestand[i.key] = 0);
   ITEMS.forEach(i => settings.kartongroessen[i.key] = 1);
@@ -900,11 +907,25 @@
     return doc;
   }
 
-  function handleProtokollPdf(action){
+  function renderProtoExportInfo(){
+    const el = document.getElementById('protoExportInfo');
+    if(!el) return;
+    if(protokollExportLog.bis){
+      el.textContent = 'Zuletzt gedruckt/gespeichert bis: ' + fmtDate(protokollExportLog.bis) + ' (am ' + fmtDate(protokollExportLog.exportedAt) + ')';
+    } else {
+      el.textContent = '';
+    }
+  }
+
+  async function handleProtokollPdf(action){
     const doc = buildProtokollPdf();
     const von = document.getElementById('p_von').value;
     const bis = document.getElementById('p_bis').value;
     const filename = 'APD_Protokoll_' + (von||'') + '_bis_' + (bis||'') + '.pdf';
+
+    protokollExportLog = { bis, exportedAt: isoDate(new Date()) };
+    await saveKey('protokoll:lastexport', protokollExportLog);
+    renderProtoExportInfo();
 
     if(action === 'print'){
       window.open(doc.output('bloburl'), '_blank');
@@ -1019,18 +1040,74 @@
     showToast('Verbrauch pro Dialysetag gespeichert');
   });
 
-  // ---------- Letzte Bestellung ----------
+  // ---------- Offene Bestellungen ----------
   function renderLastOrderList(){
     const wrap = document.getElementById('lastOrderList');
     wrap.innerHTML = ITEMS.map(it=>{
-      const val = (lastOrder.items && lastOrder.items[it.key]) || 0;
       return '<div class="stock-row">' +
         '<div class="name">' + it.label + '</div>' +
-        '<input type="number" step="1" min="0" data-key="' + it.key + '" value="' + val + '"> <span class="muted" style="font-size:12px;width:28px;">' + it.unit + '</span>' +
+        '<input type="number" step="1" min="0" data-key="' + it.key + '" value="0"> <span class="muted" style="font-size:12px;width:28px;">' + it.unit + '</span>' +
       '</div>';
     }).join('');
-    document.getElementById('lo_date').value = lastOrder.date || '';
-    document.getElementById('lo_delivery').value = lastOrder.delivery || '';
+    document.getElementById('lo_date').value = '';
+    document.getElementById('lo_delivery').value = '';
+  }
+
+  function summarizeOrderItems(items){
+    return ITEMS.filter(it => (items[it.key]||0) > 0)
+      .map(it => (items[it.key]) + ' ' + it.unit + ' ' + it.label)
+      .join(', ') || 'keine Mengen erfasst';
+  }
+
+  function renderOpenOrdersList(){
+    const wrap = document.getElementById('openOrdersList');
+    if(openOrders.length === 0){
+      wrap.innerHTML = '<p class="empty" style="padding:10px 0;">Keine offenen Bestellungen.</p>';
+      return;
+    }
+    const sorted = [...openOrders].sort((a,b)=> (a.date||'').localeCompare(b.date||''));
+    wrap.innerHTML = sorted.map(o=>{
+      return '<div style="padding:10px 0;border-bottom:1px solid var(--border);">' +
+        '<div style="font-weight:600;font-size:14px;">' + fmtDate(o.date) + (o.delivery ? ' · Lieferung erwartet ' + fmtDate(o.delivery) : '') + '</div>' +
+        '<div class="muted" style="font-size:12.5px;margin:3px 0 8px;">' + summarizeOrderItems(o.items||{}) + '</div>' +
+        '<div class="btn-row">' +
+          '<button class="btn btn-ghost" data-id="' + o.id + '" data-action="receive" style="font-size:13px;padding:8px 10px;">Als geliefert verbuchen</button>' +
+          '<button class="btn btn-danger-ghost" data-id="' + o.id + '" data-action="delete" style="font-size:13px;padding:8px 10px;flex:0 0 auto;width:auto;">Löschen</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    wrap.querySelectorAll('button[data-action="receive"]').forEach(b=>{
+      b.addEventListener('click', ()=> receiveOpenOrder(b.dataset.id));
+    });
+    wrap.querySelectorAll('button[data-action="delete"]').forEach(b=>{
+      b.addEventListener('click', ()=> deleteOpenOrder(b.dataset.id));
+    });
+  }
+
+  async function receiveOpenOrder(id){
+    const idx = openOrders.findIndex(o=>o.id===id);
+    if(idx === -1) return;
+    const o = openOrders[idx];
+    Object.keys(o.items||{}).forEach(k=>{
+      bestand[k] = (bestand[k]||0) + (o.items[k]||0);
+    });
+    openOrders.splice(idx,1);
+    await saveKey('material:bestand', bestand);
+    await saveKey('bestellung:openorders', openOrders);
+    renderOpenOrdersList();
+    renderStock();
+    if(lastRecommendation) renderRecommendation();
+    showToast('Lieferung verbucht, Bestand aktualisiert');
+  }
+
+  async function deleteOpenOrder(id){
+    const idx = openOrders.findIndex(o=>o.id===id);
+    if(idx === -1) return;
+    openOrders.splice(idx,1);
+    await saveKey('bestellung:openorders', openOrders);
+    renderOpenOrdersList();
+    if(lastRecommendation) renderRecommendation();
+    showToast('Offene Bestellung gelöscht');
   }
 
   document.getElementById('btnCopyFromReco').addEventListener('click', ()=>{
@@ -1047,15 +1124,27 @@
   });
 
   document.getElementById('btnSaveLastOrder').addEventListener('click', async ()=>{
-    lastOrder.date = document.getElementById('lo_date').value;
-    lastOrder.delivery = document.getElementById('lo_delivery').value;
-    lastOrder.items = {};
+    const date = document.getElementById('lo_date').value;
+    if(!date){ showToast('Bitte Bestelldatum angeben'); return; }
+    const items = {};
+    let anyQty = false;
     document.querySelectorAll('#lastOrderList input').forEach(inp=>{
-      lastOrder.items[inp.dataset.key] = Math.max(0, Number(inp.value || 0));
+      const qty = Math.max(0, Number(inp.value || 0));
+      items[inp.dataset.key] = qty;
+      if(qty > 0) anyQty = true;
     });
-    await saveKey('bestellung:lastorder', lastOrder);
+    if(!anyQty){ showToast('Bitte mindestens eine Menge eintragen'); return; }
+    openOrders.push({
+      id: uid(),
+      date,
+      delivery: document.getElementById('lo_delivery').value,
+      items
+    });
+    await saveKey('bestellung:openorders', openOrders);
+    renderOpenOrdersList();
+    renderLastOrderList();
     if(lastRecommendation) renderRecommendation();
-    showToast('Letzte Bestellung gespeichert');
+    showToast('Offene Bestellung gespeichert');
   });
 
   // ---------- Bestellung ----------
@@ -1106,19 +1195,31 @@
     const { rates, usingDefault, daysSpan, treatments } = computeRates();
     const today = new Date(); today.setHours(0,0,0,0);
 
+    // Bereits offene (bestellte, aber noch nicht gelieferte) Mengen je Artikel
+    // summieren – die zählen wie "unterwegs befindlicher" Bestand.
+    const pendingByKey = {};
+    ITEMS.forEach(it => pendingByKey[it.key] = 0);
+    openOrders.forEach(o=>{
+      Object.keys(o.items||{}).forEach(k=>{
+        if(Object.prototype.hasOwnProperty.call(pendingByKey, k)) pendingByKey[k] += Number(o.items[k]||0);
+      });
+    });
+
     // Schritt 1: Für jeden Artikel den spätesten Bestelltermin ermitteln – der
-    // Bestand muss bis zum Eintreffen der Lieferung (Liefervorlauf) reichen und
-    // danach noch die Reserve übrig lassen.
+    // (physische + bereits bestellte) Bestand muss bis zum Eintreffen der Lieferung
+    // (Liefervorlauf) reichen und danach noch die Reserve übrig lassen.
     const perItem = ITEMS.map(it=>{
       const rate = rates[it.key] || 0;
       const currentStock = bestand[it.key] || 0;
-      const daysOfSupply = rate > 0 ? currentStock / rate : Infinity;
+      const pending = pendingByKey[it.key] || 0;
+      const effectiveStock = currentStock + pending;
+      const daysOfSupply = rate > 0 ? effectiveStock / rate : Infinity;
       let mustOrderInDays = null, mustOrderDate = null;
       if(rate > 0){
         mustOrderInDays = Math.floor(daysOfSupply - s.vorlaufzeit - s.reservetage);
         mustOrderDate = new Date(today.getTime() + mustOrderInDays * 86400000);
       }
-      return { key: it.key, label: it.label, rate, currentStock, daysOfSupply, mustOrderInDays, mustOrderDate };
+      return { key: it.key, label: it.label, rate, currentStock, pending, effectiveStock, daysOfSupply, mustOrderInDays, mustOrderDate };
     });
 
     // Schritt 2: Der insgesamt späteste Termin, um ALLES gemeinsam zu bestellen,
@@ -1139,13 +1240,15 @@
       daysUntilDelivery = Math.max(0, Math.round((lieferdatum - today) / 86400000));
     }
 
-    // Diese eine Bestellung muss den Bestand von der Lieferung bis zur übernächsten
-    // Lieferung (Lieferintervall) tragen und danach noch die Reserve übrig lassen.
+    // Diese eine Bestellung muss den (physischen + bereits unterwegs befindlichen)
+    // Bestand von der Lieferung bis zur übernächsten Lieferung (Lieferintervall)
+    // tragen und danach noch die Reserve übrig lassen.
     const results = ITEMS.map(it=>{
       const base = perItem.find(p => p.key === it.key);
       const rate = base.rate;
       const currentStock = base.currentStock;
-      const stockAtDelivery = currentStock - rate * daysUntilDelivery;
+      const pending = base.pending;
+      const stockAtDelivery = base.effectiveStock - rate * daysUntilDelivery;
       const need = rate * (s.lieferintervall + s.reservetage);
       const orderQty = Math.max(0, Math.ceil(need - stockAtDelivery));
       const daysOfSupply = base.daysOfSupply;
@@ -1161,7 +1264,7 @@
       const finalUnits = cartonSize > 1 ? finalDisplay * cartonSize : finalDisplay;
       const isOverridden = hasOverride && finalDisplay !== suggestedDisplay;
 
-      return { ...it, rate, currentStock, stockAtDelivery, orderQty, daysOfSupply, reicht, cartonSize, orderCartons, orderUnitsRounded, suggestedDisplay, finalDisplay, finalUnits, isOverridden, mustOrderInDays: base.mustOrderInDays, mustOrderDate: base.mustOrderDate };
+      return { ...it, rate, currentStock, pending, stockAtDelivery, orderQty, daysOfSupply, reicht, cartonSize, orderCartons, orderUnitsRounded, suggestedDisplay, finalDisplay, finalUnits, isOverridden, mustOrderInDays: base.mustOrderInDays, mustOrderDate: base.mustOrderDate };
     });
 
     const risk = critical ? (critical.daysOfSupply < daysUntilDelivery) : false;
@@ -1219,27 +1322,30 @@
 
     let lastOrderLine = '';
     let intervalWarning = '';
-    if(lastOrder.date){
-      const daysSince = Math.round((new Date() - new Date(lastOrder.date + 'T00:00:00')) / 86400000);
-      let text = 'Letzte Bestellung: ' + fmtDate(lastOrder.date) + ' (vor ' + daysSince + ' Tagen)';
-      if(lastOrder.delivery){
+    if(openOrders.length > 0){
+      const mostRecent = [...openOrders].sort((a,b)=> (b.date||'').localeCompare(a.date||''))[0];
+      const daysSince = Math.round((new Date() - new Date(mostRecent.date + 'T00:00:00')) / 86400000);
+      let text = 'Letzte Bestellung: ' + fmtDate(mostRecent.date) + ' (vor ' + daysSince + ' Tagen)';
+      if(openOrders.length > 1) text += ' · ' + openOrders.length + ' offene Bestellungen insgesamt';
+      if(mostRecent.delivery){
         const today0 = new Date(); today0.setHours(0,0,0,0);
-        const deliveryDate = new Date(lastOrder.delivery + 'T00:00:00');
+        const deliveryDate = new Date(mostRecent.delivery + 'T00:00:00');
         const overdue = deliveryDate < today0;
-        text += ' · Lieferung ' + (overdue ? 'erwartet war' : 'erwartet') + ': ' + fmtDate(lastOrder.delivery);
-        if(overdue) text += ' ⚠️ noch nicht als Bestand erfasst?';
+        text += ' · Lieferung ' + (overdue ? 'erwartet war' : 'erwartet') + ': ' + fmtDate(mostRecent.delivery);
+        if(overdue) text += ' ⚠️ schon verbucht?';
       }
       lastOrderLine = '<p class="sub" style="margin:0 0 12px;">' + text + '</p>';
 
       // Plausibilitäts-Check: liegt die letzte Bestellung deutlich länger zurück
       // als das eingestellte Lieferintervall, stimmt evtl. etwas nicht mehr überein.
       if(daysSince > s.lieferintervall + 3){
-        intervalWarning = '<div class="banner warn"><span>ℹ️</span><span>Seit der letzten Bestellung sind ' + daysSince + ' Tage vergangen – dein Lieferintervall ist aber auf ' + s.lieferintervall + ' Tage eingestellt. Falls du zwischenzeitlich bestellt hast, trage das oben unter "Letzte Bestellung" nach.</span></div>';
+        intervalWarning = '<div class="banner warn"><span>ℹ️</span><span>Seit der letzten Bestellung sind ' + daysSince + ' Tage vergangen – dein Lieferintervall ist aber auf ' + s.lieferintervall + ' Tage eingestellt. Falls du zwischenzeitlich bestellt hast, trage das unten unter "Neue Bestellung erfassen" nach.</span></div>';
       }
     }
 
     const rows = reco.results.map(r=>{
-      const stockCell = r.currentStock < 0 ? '<span class="neg">' + fmt(r.currentStock) + '</span>' : fmt(r.currentStock);
+      const stockCell = (r.currentStock < 0 ? '<span class="neg">' + fmt(r.currentStock) + '</span>' : fmt(r.currentStock)) +
+        (r.pending > 0 ? '<div class="muted" style="font-size:10.5px;">+' + fmt(r.pending) + ' unterwegs</div>' : '');
       const warnCell = (r.rate > 0 && !r.reicht) ? ' ⚠️' : '';
       const overrideBadge = r.isOverridden ? ' <span class="pill pill-teal" style="font-size:10px;">angepasst</span>' : '';
       const unitLabel = r.cartonSize > 1 ? 'Kt.' : r.unit;
@@ -1393,7 +1499,8 @@
       bestand,
       settings,
       orderOverrides,
-      lastOrder
+      openOrders,
+      protokollExportLog
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -1429,14 +1536,16 @@
       settings = Object.assign({}, settings, data.settings || {});
       patientInfo = Object.assign({}, patientInfo, data.patientInfo || {});
       orderOverrides = data.orderOverrides || {};
-      lastOrder = Object.assign({ date:'', delivery:'', items:{} }, data.lastOrder || {});
+      openOrders = Array.isArray(data.openOrders) ? data.openOrders : [];
+      protokollExportLog = Object.assign({ bis:'', exportedAt:'' }, data.protokollExportLog || {});
 
       await saveKey('dialyse:entries', entries);
       await saveKey('material:bestand', bestand);
       await saveKey('bestellung:settings', settings);
       await saveKey('patient:info', patientInfo);
       await saveKey('bestellung:overrides', orderOverrides);
-      await saveKey('bestellung:lastorder', lastOrder);
+      await saveKey('bestellung:openorders', openOrders);
+      await saveKey('protokoll:lastexport', protokollExportLog);
 
       document.getElementById('p_name').value = patientInfo.name || '';
       document.getElementById('s_vorlauf').value = settings.vorlaufzeit;
@@ -1445,11 +1554,13 @@
       document.getElementById('s_email').value = settings.email || '';
 
       renderProtokoll();
+      renderProtoExportInfo();
       renderStock();
       renderDeliveryList();
       renderKartonList();
       renderDailyConsumptionList();
       renderLastOrderList();
+      renderOpenOrdersList();
       lastRecommendation = null;
 
       document.getElementById('backupInfo').textContent = 'Sicherung vom ' + fmtDate(data.exportedAt) + ' erfolgreich eingespielt.';
@@ -1478,8 +1589,19 @@
     if(loadedPatient) Object.assign(patientInfo, loadedPatient);
     document.getElementById('p_name').value = patientInfo.name || '';
     orderOverrides = await loadKey('bestellung:overrides', {});
-    const loadedLastOrder = await loadKey('bestellung:lastorder', null);
-    if(loadedLastOrder) Object.assign(lastOrder, loadedLastOrder);
+    openOrders = await loadKey('bestellung:openorders', []);
+    if(!Array.isArray(openOrders)) openOrders = [];
+    if(openOrders.length === 0){
+      // Migration: aus einer alten Version könnte noch eine einzelne "letzte
+      // Bestellung" gespeichert sein – als offene Bestellung übernehmen.
+      const legacy = await loadKey('bestellung:lastorder', null);
+      if(legacy && legacy.date && Object.values(legacy.items || {}).some(v => v > 0)){
+        openOrders.push({ id: uid(), date: legacy.date, delivery: legacy.delivery || '', items: legacy.items });
+        await saveKey('bestellung:openorders', openOrders);
+      }
+    }
+    const loadedExportLog = await loadKey('protokoll:lastexport', null);
+    if(loadedExportLog) Object.assign(protokollExportLog, loadedExportLog);
 
     const week = currentWeekRange();
     document.getElementById('p_von').value = week.von;
@@ -1492,11 +1614,13 @@
 
     setDefaultDateTime();
     renderProtokoll();
+    renderProtoExportInfo();
     renderStock();
     renderDeliveryList();
     renderKartonList();
     renderDailyConsumptionList();
     renderLastOrderList();
+    renderOpenOrdersList();
     renderDeliverySchedule();
     document.getElementById('appVersion').textContent = APP_VERSION + ' (' + fmtDate(APP_VERSION_DATE) + ')';
   }

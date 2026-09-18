@@ -218,7 +218,10 @@
       </div>
     </div>
 
-    <div class="eyebrow">Verlauf</div>
+    <div class="eyebrow" style="display:flex;align-items:center;justify-content:space-between;">
+      <span>Verlauf</span>
+      <button id="btnToggleArchive" style="border:none;background:none;color:var(--primary);font-weight:700;font-size:11px;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;">Archiv (<span id="archiveCount">0</span>)</button>
+    </div>
     <div class="card" id="protokollListCard">
       <div class="table-wrap">
         <table id="protokollTable">
@@ -229,6 +232,19 @@
         </table>
       </div>
       <div class="empty" id="protokollEmpty" style="display:none;">Noch keine Einträge. Trage oben deine erste Behandlung ein.</div>
+    </div>
+
+    <div class="card" id="archiveCard" style="display:none;">
+      <p class="sub">Archivierte Einträge – zählen weiterhin für Bestand und Verbrauch, sind aber aus dem Verlauf ausgeblendet.</p>
+      <div class="table-wrap">
+        <table id="archiveTable">
+          <thead><tr>
+            <th>Datum</th><th>RR</th><th>Puls</th><th>kg</th><th>Beutel 1</th><th>Beutel 2</th><th>Pause</th><th>UF</th><th>Vol.</th><th></th>
+          </tr></thead>
+          <tbody id="archiveBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="archiveEmpty" style="display:none;">Keine archivierten Einträge.</div>
     </div>
 
     <div class="eyebrow">Protokoll exportieren</div>
@@ -359,7 +375,7 @@
 (function(){
   "use strict";
 
-  const APP_VERSION = '1.5.0';
+  const APP_VERSION = '1.6.0';
   const APP_VERSION_DATE = '2026-08-23';
 
   const ITEMS = [
@@ -793,41 +809,98 @@
     return (anzahl || 1) + '× ' + name;
   }
 
+  function buildEntryRow(e, archivedView){
+    const rr = (e.sys || e.dia) ? (e.sys||'–') + '/' + (e.dia||'–') : '–';
+    const actions = archivedView
+      ? ('<button data-id="' + e.id + '" class="unarchiveEntryBtn" style="border:none;background:none;color:var(--primary);font-weight:700;cursor:pointer;padding:4px 6px;">↺</button>' +
+         '<button data-id="' + e.id + '" class="delEntryBtn" style="border:none;background:none;color:var(--danger);font-weight:700;cursor:pointer;padding:4px 6px;">✕</button>')
+      : ('<button data-id="' + e.id + '" class="editEntryBtn" style="border:none;background:none;color:var(--primary);font-weight:700;cursor:pointer;padding:4px 6px;">✎</button>' +
+         '<button data-id="' + e.id + '" class="archiveEntryBtn" style="border:none;background:none;color:var(--muted);font-weight:700;cursor:pointer;padding:4px 6px;">🗄</button>' +
+         '<button data-id="' + e.id + '" class="delEntryBtn" style="border:none;background:none;color:var(--danger);font-weight:700;cursor:pointer;padding:4px 6px;">✕</button>');
+    return '<tr>' +
+      '<td>' + fmtDate(e.datum) + (e.zeit ? '<br><span class="muted">' + e.zeit + '</span>' : '') + '</td>' +
+      '<td>' + rr + '</td>' +
+      '<td>' + (e.puls || '–') + '</td>' +
+      '<td>' + (e.gewicht || '–') + '</td>' +
+      '<td>' + beutelLabel(e.b1_farbe, e.b1_anzahl) + '</td>' +
+      '<td>' + beutelLabel(e.b2_farbe, e.b2_anzahl) + '</td>' +
+      '<td>' + (e.pause === 'ja' ? 'Ja' : 'Nein') + '</td>' +
+      '<td>' + (e.uf || '–') + '</td>' +
+      '<td>' + (e.volumen || '–') + '</td>' +
+      '<td style="white-space:nowrap;">' + actions + '</td>' +
+    '</tr>';
+  }
+
   function renderProtokoll(){
     const body = document.getElementById('protokollBody');
     const empty = document.getElementById('protokollEmpty');
-    const sorted = [...entries].sort((a,b)=> (b.datum+ (b.zeit||'')).localeCompare(a.datum+(a.zeit||'')));
+    const sorted = entries.filter(e => !e.archived).sort((a,b)=> (b.datum+ (b.zeit||'')).localeCompare(a.datum+(a.zeit||'')));
+
+    document.getElementById('archiveCount').textContent = entries.filter(e => e.archived).length;
+
     if(sorted.length === 0){
       body.innerHTML = '';
       empty.style.display = 'block';
       return;
     }
     empty.style.display = 'none';
-    body.innerHTML = sorted.map(e=>{
-      const rr = (e.sys || e.dia) ? (e.sys||'–') + '/' + (e.dia||'–') : '–';
-      return '<tr>' +
-        '<td>' + fmtDate(e.datum) + (e.zeit ? '<br><span class="muted">' + e.zeit + '</span>' : '') + '</td>' +
-        '<td>' + rr + '</td>' +
-        '<td>' + (e.puls || '–') + '</td>' +
-        '<td>' + (e.gewicht || '–') + '</td>' +
-        '<td>' + beutelLabel(e.b1_farbe, e.b1_anzahl) + '</td>' +
-        '<td>' + beutelLabel(e.b2_farbe, e.b2_anzahl) + '</td>' +
-        '<td>' + (e.pause === 'ja' ? 'Ja' : 'Nein') + '</td>' +
-        '<td>' + (e.uf || '–') + '</td>' +
-        '<td>' + (e.volumen || '–') + '</td>' +
-        '<td style="white-space:nowrap;">' +
-          '<button data-id="' + e.id + '" class="editEntryBtn" style="border:none;background:none;color:var(--primary);font-weight:700;cursor:pointer;padding:4px 6px;">✎</button>' +
-          '<button data-id="' + e.id + '" class="delEntryBtn" style="border:none;background:none;color:var(--danger);font-weight:700;cursor:pointer;padding:4px 6px;">✕</button>' +
-        '</td>' +
-      '</tr>';
-    }).join('');
+    body.innerHTML = sorted.map(e => buildEntryRow(e, false)).join('');
     body.querySelectorAll('.editEntryBtn').forEach(b=>{
       b.addEventListener('click', ()=> startEditing(b.dataset.id));
+    });
+    body.querySelectorAll('.archiveEntryBtn').forEach(b=>{
+      b.addEventListener('click', ()=> archiveEntry(b.dataset.id));
     });
     body.querySelectorAll('.delEntryBtn').forEach(b=>{
       b.addEventListener('click', ()=> deleteEntry(b.dataset.id));
     });
   }
+
+  function renderArchive(){
+    const body = document.getElementById('archiveBody');
+    const empty = document.getElementById('archiveEmpty');
+    const sorted = entries.filter(e => e.archived).sort((a,b)=> (b.datum+ (b.zeit||'')).localeCompare(a.datum+(a.zeit||'')));
+    if(sorted.length === 0){
+      body.innerHTML = '';
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    body.innerHTML = sorted.map(e => buildEntryRow(e, true)).join('');
+    body.querySelectorAll('.unarchiveEntryBtn').forEach(b=>{
+      b.addEventListener('click', ()=> unarchiveEntry(b.dataset.id));
+    });
+    body.querySelectorAll('.delEntryBtn').forEach(b=>{
+      b.addEventListener('click', ()=> deleteEntry(b.dataset.id));
+    });
+  }
+
+  async function archiveEntry(id){
+    const e = entries.find(x=>x.id===id);
+    if(!e) return;
+    e.archived = true;
+    await saveKey('dialyse:entries', entries);
+    renderProtokoll();
+    renderArchive();
+    showToast('Eintrag archiviert');
+  }
+
+  async function unarchiveEntry(id){
+    const e = entries.find(x=>x.id===id);
+    if(!e) return;
+    e.archived = false;
+    await saveKey('dialyse:entries', entries);
+    renderProtokoll();
+    renderArchive();
+    showToast('Eintrag wiederhergestellt');
+  }
+
+  document.getElementById('btnToggleArchive').addEventListener('click', ()=>{
+    const card = document.getElementById('archiveCard');
+    const showing = card.style.display !== 'none';
+    if(!showing) renderArchive();
+    card.style.display = showing ? 'none' : '';
+  });
 
   function setDefaultDateTime(){
     const now = new Date();
@@ -1183,12 +1256,13 @@
       const pending = pendingByKey[it.key] || 0;
       const effectiveStock = currentStock + pending;
       const daysOfSupply = rate > 0 ? effectiveStock / rate : Infinity;
+      const reichtBisDatum = rate > 0 ? new Date(today.getTime() + Math.floor(daysOfSupply) * 86400000) : null;
       let mustOrderInDays = null, mustOrderDate = null;
       if(rate > 0){
         mustOrderInDays = Math.floor(daysOfSupply - s.vorlaufzeit - s.reservetage);
         mustOrderDate = new Date(today.getTime() + mustOrderInDays * 86400000);
       }
-      return { key: it.key, label: it.label, rate, currentStock, pending, effectiveStock, daysOfSupply, mustOrderInDays, mustOrderDate };
+      return { key: it.key, label: it.label, rate, currentStock, pending, effectiveStock, daysOfSupply, reichtBisDatum, mustOrderInDays, mustOrderDate };
     });
 
     // Schritt 2: Der insgesamt späteste Termin, um ALLES gemeinsam zu bestellen,
@@ -1233,7 +1307,7 @@
       const finalUnits = cartonSize > 1 ? finalDisplay * cartonSize : finalDisplay;
       const isOverridden = hasOverride && finalDisplay !== suggestedDisplay;
 
-      return { ...it, rate, currentStock, pending, stockAtDelivery, orderQty, daysOfSupply, reicht, cartonSize, orderCartons, orderUnitsRounded, suggestedDisplay, finalDisplay, finalUnits, isOverridden, mustOrderInDays: base.mustOrderInDays, mustOrderDate: base.mustOrderDate };
+      return { ...it, rate, currentStock, pending, stockAtDelivery, orderQty, daysOfSupply, reichtBisDatum: base.reichtBisDatum, reicht, cartonSize, orderCartons, orderUnitsRounded, suggestedDisplay, finalDisplay, finalUnits, isOverridden, mustOrderInDays: base.mustOrderInDays, mustOrderDate: base.mustOrderDate };
     });
 
     const risk = critical ? (critical.daysOfSupply < daysUntilDelivery) : false;
@@ -1317,12 +1391,13 @@
         (r.pending > 0 ? '<div class="muted" style="font-size:10.5px;">+' + fmt(r.pending) + ' unterwegs</div>' : '');
       const warnCell = (r.rate > 0 && !r.reicht) ? ' ⚠️' : '';
       const overrideBadge = r.isOverridden ? ' <span class="pill pill-teal" style="font-size:10px;">angepasst</span>' : '';
+      const reichtBisCell = r.reichtBisDatum ? fmtDate(r.reichtBisDatum) : '–';
       const hint = '<div class="muted" style="font-size:10.5px;margin-top:2px;">≈ ' + fmt(r.finalUnits) + ' ' + r.unit + '</div>';
       const editCell = '<div style="display:flex;align-items:center;gap:5px;">' +
           '<input type="number" min="0" step="1" class="orderOverrideInput" data-key="' + r.key + '" value="' + r.finalDisplay + '" style="width:58px;padding:6px 7px;text-align:center;">' +
           '<span class="muted" style="font-size:11px;">Kt.</span>' +
         '</div>' + hint;
-      return '<tr><td>' + r.label + warnCell + overrideBadge + '</td><td>' + stockCell + '</td><td>' + fmt(r.rate,2) + '</td><td>' + editCell + '</td></tr>';
+      return '<tr><td>' + r.label + warnCell + overrideBadge + '</td><td>' + stockCell + '</td><td>' + reichtBisCell + '</td><td>' + editCell + '</td></tr>';
     }).join('');
 
     const anyOverride = Object.keys(orderOverrides).length > 0;
@@ -1348,7 +1423,7 @@
         '</div>' +
         '<p class="sub" style="margin:0 0 8px;">Die Bestellmenge lässt sich in der Tabelle direkt anpassen – deine Änderung wird für PDF und E-Mail übernommen.</p>' +
         '<div class="table-wrap">' +
-          '<table><thead><tr><th>Artikel</th><th>Bestand</th><th>⌀/Tag</th><th>Bestellmenge</th></tr></thead>' +
+          '<table><thead><tr><th>Artikel</th><th>Bestand</th><th>Reicht bis</th><th>Bestellmenge</th></tr></thead>' +
           '<tbody>' + rows + '</tbody></table>' +
         '</div>' +
         (anyOverride ? '<button class="btn btn-ghost" id="btnResetOverrides" style="margin-top:10px;">Anpassungen zurücksetzen</button>' : '') +
@@ -1413,10 +1488,10 @@
     const columns = [
       { header:'Artikel', width:56 },
       { header:'Aktueller Bestand', width:36 },
-      { header:'⌀ Verbrauch/Tag', width:36 },
+      { header:'Reicht bis', width:36 },
       { header:'Bestellmenge', width:54 }
     ];
-    const rows = items.map(r => [r.label, fmt(r.currentStock), fmt(r.rate,2), orderLabelText(r)]);
+    const rows = items.map(r => [r.label, fmt(r.currentStock), r.reichtBisDatum ? fmtDate(r.reichtBisDatum) : '–', orderLabelText(r)]);
 
     if(rows.length === 0){
       doc.setFontSize(10);

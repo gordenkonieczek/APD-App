@@ -375,7 +375,7 @@
 (function(){
   "use strict";
 
-  const APP_VERSION = '1.6.0';
+  const APP_VERSION = '1.7.1';
   const APP_VERSION_DATE = '2026-08-23';
 
   const ITEMS = [
@@ -1015,10 +1015,13 @@
   // ---------- Bestand ----------
   function renderStock(){
     const wrap = document.getElementById('stockList');
+    const reco = computeRecommendation();
     wrap.innerHTML = ITEMS.map(it=>{
       const val = bestand[it.key] || 0;
+      const r = reco.results.find(x=>x.key === it.key);
+      const reichtBis = r && r.reichtBisDatum ? '<small>reicht bis ' + fmtDate(r.reichtBisDatum) + '</small>' : '';
       return '<div class="stock-row">' +
-        '<div class="name">' + it.label + '</div>' +
+        '<div class="name">' + it.label + reichtBis + '</div>' +
         '<input type="number" step="1" data-key="' + it.key + '" value="' + val + '"> <span class="muted" style="font-size:12px;width:28px;">' + it.unit + '</span>' +
       '</div>';
     }).join('');
@@ -1256,7 +1259,9 @@
       const pending = pendingByKey[it.key] || 0;
       const effectiveStock = currentStock + pending;
       const daysOfSupply = rate > 0 ? effectiveStock / rate : Infinity;
-      const reichtBisDatum = rate > 0 ? new Date(today.getTime() + Math.floor(daysOfSupply) * 86400000) : null;
+      // "Reicht bis" = letzter Tag, an dem der Bestand noch ausreicht. Der heutige
+      // Tag zählt dabei bereits als erster Verbrauchstag mit, daher -1.
+      const reichtBisDatum = rate > 0 ? new Date(today.getTime() + Math.max(0, Math.floor(daysOfSupply) - 1) * 86400000) : null;
       let mustOrderInDays = null, mustOrderDate = null;
       if(rate > 0){
         mustOrderInDays = Math.floor(daysOfSupply - s.vorlaufzeit - s.reservetage);
@@ -1391,13 +1396,12 @@
         (r.pending > 0 ? '<div class="muted" style="font-size:10.5px;">+' + fmt(r.pending) + ' unterwegs</div>' : '');
       const warnCell = (r.rate > 0 && !r.reicht) ? ' ⚠️' : '';
       const overrideBadge = r.isOverridden ? ' <span class="pill pill-teal" style="font-size:10px;">angepasst</span>' : '';
-      const reichtBisCell = r.reichtBisDatum ? fmtDate(r.reichtBisDatum) : '–';
       const hint = '<div class="muted" style="font-size:10.5px;margin-top:2px;">≈ ' + fmt(r.finalUnits) + ' ' + r.unit + '</div>';
       const editCell = '<div style="display:flex;align-items:center;gap:5px;">' +
           '<input type="number" min="0" step="1" class="orderOverrideInput" data-key="' + r.key + '" value="' + r.finalDisplay + '" style="width:58px;padding:6px 7px;text-align:center;">' +
           '<span class="muted" style="font-size:11px;">Kt.</span>' +
         '</div>' + hint;
-      return '<tr><td>' + r.label + warnCell + overrideBadge + '</td><td>' + stockCell + '</td><td>' + reichtBisCell + '</td><td>' + editCell + '</td></tr>';
+      return '<tr><td>' + r.label + warnCell + overrideBadge + '</td><td>' + stockCell + '</td><td>' + editCell + '</td></tr>';
     }).join('');
 
     const anyOverride = Object.keys(orderOverrides).length > 0;
@@ -1423,7 +1427,7 @@
         '</div>' +
         '<p class="sub" style="margin:0 0 8px;">Die Bestellmenge lässt sich in der Tabelle direkt anpassen – deine Änderung wird für PDF und E-Mail übernommen.</p>' +
         '<div class="table-wrap">' +
-          '<table><thead><tr><th>Artikel</th><th>Bestand</th><th>Reicht bis</th><th>Bestellmenge</th></tr></thead>' +
+          '<table><thead><tr><th>Artikel</th><th>Bestand</th><th>Bestellmenge</th></tr></thead>' +
           '<tbody>' + rows + '</tbody></table>' +
         '</div>' +
         (anyOverride ? '<button class="btn btn-ghost" id="btnResetOverrides" style="margin-top:10px;">Anpassungen zurücksetzen</button>' : '') +
@@ -1486,12 +1490,11 @@
     doc.text('Liefervorlauf: ' + s.vorlaufzeit + ' Tage   ·   Lieferintervall: ' + s.lieferintervall + ' Tage   ·   Reserve: ' + s.reservetage + ' Tage', 14, headY + 5);
 
     const columns = [
-      { header:'Artikel', width:56 },
-      { header:'Aktueller Bestand', width:36 },
-      { header:'Reicht bis', width:36 },
-      { header:'Bestellmenge', width:54 }
+      { header:'Artikel', width:70 },
+      { header:'Aktueller Bestand', width:46 },
+      { header:'Bestellmenge', width:66 }
     ];
-    const rows = items.map(r => [r.label, fmt(r.currentStock), r.reichtBisDatum ? fmtDate(r.reichtBisDatum) : '–', orderLabelText(r)]);
+    const rows = items.map(r => [r.label, fmt(r.currentStock), orderLabelText(r)]);
 
     if(rows.length === 0){
       doc.setFontSize(10);

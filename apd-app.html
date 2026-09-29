@@ -178,19 +178,12 @@
         <div class="field"><label>Datum</label><input type="date" id="f_datum"></div>
         <div class="field"><label>Uhrzeit</label><input type="time" id="f_zeit"></div>
       </div>
-      <div class="row2">
-        <div class="field"><label>Blutdruck Start syst.</label><input type="number" id="f_sys_start" placeholder="mmHg"></div>
-        <div class="field"><label>Blutdruck Start diast.</label><input type="number" id="f_dia_start" placeholder="mmHg"></div>
-      </div>
-      <div class="row2">
-        <div class="field"><label>Blutdruck Ende syst.</label><input type="number" id="f_sys" placeholder="mmHg"></div>
-        <div class="field"><label>Blutdruck Ende diast.</label><input type="number" id="f_dia" placeholder="mmHg"></div>
-      </div>
       <div class="row3">
+        <div class="field"><label>RR systolisch</label><input type="number" id="f_sys" placeholder="mmHg"></div>
+        <div class="field"><label>RR diastolisch</label><input type="number" id="f_dia" placeholder="mmHg"></div>
         <div class="field"><label>Puls</label><input type="number" id="f_puls" placeholder="/min"></div>
-        <div class="field"><label>Gewicht Start (kg)</label><input type="number" step="0.1" id="f_gewicht_start" placeholder="kg"></div>
-        <div class="field"><label>Gewicht Ende (kg)</label><input type="number" step="0.1" id="f_gewicht" placeholder="kg"></div>
       </div>
+      <div class="field"><label>Gewicht (kg)</label><input type="number" step="0.1" id="f_gewicht" placeholder="kg"></div>
 
       <div class="row2">
         <div class="field"><label>Beutel 1 – Farbe</label>
@@ -233,7 +226,7 @@
       <div class="table-wrap">
         <table id="protokollTable">
           <thead><tr>
-            <th>Datum</th><th>RR (S/E)</th><th>Puls</th><th>kg (S/E)</th><th>Beutel 1</th><th>Beutel 2</th><th>Pause</th><th>UF</th><th>Vol.</th><th></th>
+            <th>Datum</th><th>RR</th><th>Puls</th><th>kg</th><th>Beutel 1</th><th>Beutel 2</th><th>Pause</th><th>UF</th><th>Vol.</th><th></th>
           </tr></thead>
           <tbody id="protokollBody"></tbody>
         </table>
@@ -246,7 +239,7 @@
       <div class="table-wrap">
         <table id="archiveTable">
           <thead><tr>
-            <th>Datum</th><th>RR (S/E)</th><th>Puls</th><th>kg (S/E)</th><th>Beutel 1</th><th>Beutel 2</th><th>Pause</th><th>UF</th><th>Vol.</th><th></th>
+            <th>Datum</th><th>RR</th><th>Puls</th><th>kg</th><th>Beutel 1</th><th>Beutel 2</th><th>Pause</th><th>UF</th><th>Vol.</th><th></th>
           </tr></thead>
           <tbody id="archiveBody"></tbody>
         </table>
@@ -382,7 +375,7 @@
 (function(){
   "use strict";
 
-  const APP_VERSION = '1.9.0';
+  const APP_VERSION = '1.9.1';
   const APP_VERSION_DATE = '2026-08-23';
 
   const ITEMS = [
@@ -699,7 +692,7 @@
   }
 
   function resetEntryForm(){
-    ['f_sys_start','f_dia_start','f_sys','f_dia','f_puls','f_gewicht_start','f_gewicht','f_uf','f_volumen','f_bemerkung'].forEach(id=> document.getElementById(id).value = '');
+    ['f_sys','f_dia','f_puls','f_gewicht','f_uf','f_volumen','f_bemerkung'].forEach(id=> document.getElementById(id).value = '');
     document.getElementById('f_b1_farbe').value = '';
     document.getElementById('f_b2_farbe').value = '';
     document.getElementById('f_b1_anzahl').value = 1;
@@ -723,12 +716,9 @@
     editingId = id;
     document.getElementById('f_datum').value = e.datum;
     document.getElementById('f_zeit').value = e.zeit || '';
-    document.getElementById('f_sys_start').value = e.sys_start || '';
-    document.getElementById('f_dia_start').value = e.dia_start || '';
     document.getElementById('f_sys').value = e.sys || '';
     document.getElementById('f_dia').value = e.dia || '';
     document.getElementById('f_puls').value = e.puls || '';
-    document.getElementById('f_gewicht_start').value = e.gewicht_start || '';
     document.getElementById('f_gewicht').value = e.gewicht || '';
     document.getElementById('f_b1_farbe').value = e.b1_farbe || '';
     document.getElementById('f_b1_anzahl').value = e.b1_anzahl || 1;
@@ -754,12 +744,9 @@
       id: editingId || uid(),
       datum,
       zeit: document.getElementById('f_zeit').value,
-      sys_start: document.getElementById('f_sys_start').value,
-      dia_start: document.getElementById('f_dia_start').value,
       sys: document.getElementById('f_sys').value,
       dia: document.getElementById('f_dia').value,
       puls: document.getElementById('f_puls').value,
-      gewicht_start: document.getElementById('f_gewicht_start').value,
       gewicht: document.getElementById('f_gewicht').value,
       b1_farbe: document.getElementById('f_b1_farbe').value,
       b1_anzahl: document.getElementById('f_b1_anzahl').value,
@@ -822,24 +809,8 @@
     return (anzahl || 1) + '× ' + name;
   }
 
-  function bpCellHtml(e){
-    const end = (e.sys || e.dia) ? (e.sys||'–') + '/' + (e.dia||'–') : null;
-    const start = (e.sys_start || e.dia_start) ? (e.sys_start||'–') + '/' + (e.dia_start||'–') : null;
-    if(start && end) return '<span class="muted" style="font-size:10.5px;">S ' + start + '</span><br>E ' + end;
-    if(end) return end;
-    if(start) return '<span class="muted" style="font-size:10.5px;">S</span> ' + start;
-    return '–';
-  }
-
-  function weightCellHtml(e){
-    const start = e.gewicht_start, end = e.gewicht;
-    if(start && end) return start + ' → ' + end;
-    if(end) return end;
-    if(start) return '<span class="muted" style="font-size:10.5px;">S</span> ' + start;
-    return '–';
-  }
-
   function buildEntryRow(e, archivedView){
+    const rr = (e.sys || e.dia) ? (e.sys||'–') + '/' + (e.dia||'–') : '–';
     const actions = archivedView
       ? ('<button data-id="' + e.id + '" class="unarchiveEntryBtn" style="border:none;background:none;color:var(--primary);font-weight:700;cursor:pointer;padding:4px 6px;">↺</button>' +
          '<button data-id="' + e.id + '" class="delEntryBtn" style="border:none;background:none;color:var(--danger);font-weight:700;cursor:pointer;padding:4px 6px;">✕</button>')
@@ -848,9 +819,9 @@
          '<button data-id="' + e.id + '" class="delEntryBtn" style="border:none;background:none;color:var(--danger);font-weight:700;cursor:pointer;padding:4px 6px;">✕</button>');
     return '<tr>' +
       '<td>' + fmtDate(e.datum) + (e.zeit ? '<br><span class="muted">' + e.zeit + '</span>' : '') + '</td>' +
-      '<td>' + bpCellHtml(e) + '</td>' +
+      '<td>' + rr + '</td>' +
       '<td>' + (e.puls || '–') + '</td>' +
-      '<td>' + weightCellHtml(e) + '</td>' +
+      '<td>' + (e.gewicht || '–') + '</td>' +
       '<td>' + beutelLabel(e.b1_farbe, e.b1_anzahl) + '</td>' +
       '<td>' + beutelLabel(e.b2_farbe, e.b2_anzahl) + '</td>' +
       '<td>' + (e.pause === 'ja' ? 'Ja' : 'Nein') + '</td>' +
@@ -971,32 +942,20 @@
 
     const columns = [
       { header:'Datum', width:20 },
-      { header:'Blutdruck (S/E) / Puls', width:28 },
-      { header:'Gewicht (S/E)', width:20 },
-      { header:'PD Pause', width:14 },
-      { header:'UF', width:14 },
-      { header:'Beutel', width:26 },
-      { header:'Behandl.-vol.', width:16 },
-      { header:'Verbandswechsel / Besonderheiten', width:44 }
+      { header:'Blutdruck / Puls', width:24 },
+      { header:'Gewicht', width:16 },
+      { header:'PD Pause', width:16 },
+      { header:'UF', width:16 },
+      { header:'Beutel', width:30 },
+      { header:'Behandl.-vol.', width:18 },
+      { header:'Verbandswechsel / Besonderheiten', width:42 }
     ];
     const rows = rangeEntries.map(e=>{
-      const bpEnd = (e.sys || e.dia) ? (e.sys||'–') + '/' + (e.dia||'–') : null;
-      const bpStart = (e.sys_start || e.dia_start) ? (e.sys_start||'–') + '/' + (e.dia_start||'–') : null;
-      let rr = '–';
-      if(bpStart && bpEnd) rr = 'S ' + bpStart + '\nE ' + bpEnd;
-      else if(bpEnd) rr = bpEnd;
-      else if(bpStart) rr = 'S ' + bpStart;
-      if(e.puls) rr += (rr === '–' ? '' : '\n') + e.puls + '/min';
-
-      let gewicht = '–';
-      if(e.gewicht_start && e.gewicht) gewicht = e.gewicht_start + ' → ' + e.gewicht + ' kg';
-      else if(e.gewicht) gewicht = e.gewicht + ' kg';
-      else if(e.gewicht_start) gewicht = 'S ' + e.gewicht_start + ' kg';
-
+      const rr = (e.sys || e.dia) ? (e.sys||'–') + '/' + (e.dia||'–') + (e.puls ? '\n' + e.puls + '/min' : '') : (e.puls ? e.puls + '/min' : '–');
       return [
         fmtDate(e.datum) + (e.zeit ? '\n' + e.zeit : ''),
         rr,
-        gewicht,
+        e.gewicht ? e.gewicht + ' kg' : '–',
         e.pause === 'ja' ? 'Ja' : 'Nein',
         e.uf ? e.uf + ' ml' : '–',
         beutelPdfText(e),

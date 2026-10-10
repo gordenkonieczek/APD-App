@@ -375,7 +375,7 @@
 (function(){
   "use strict";
 
-  const APP_VERSION = '1.9.2';
+  const APP_VERSION = '1.9.3';
   const APP_VERSION_DATE = '2026-10-10';
 
   const ITEMS = [
@@ -1021,10 +1021,10 @@
       const r = reco.results.find(x=>x.key === it.key);
       const reichtBis = r && r.reichtBisDatum
         ? '<small>reicht bis ' + fmtDate(r.reichtBisDatum) + (r.reichtBisMitBestellungDatum ? ' (mit offener Bestellung: ' + fmtDate(r.reichtBisMitBestellungDatum) + ')' : '') + '</small>'
-        : '';
+        : (r && !(r.rate > 0) ? '<small>kein Verbrauch pro Tag eingestellt – kein Datum berechenbar</small>' : '');
       return '<div class="stock-row">' +
         '<div class="name">' + it.label + reichtBis + '</div>' +
-        '<input type="number" step="1" data-key="' + it.key + '" value="' + val + '"> <span class="muted" style="font-size:12px;width:28px;">' + it.unit + '</span>' +
+        '<input type="number" step="any" data-key="' + it.key + '" value="' + (Math.round(val*100)/100) + '"> <span class="muted" style="font-size:12px;width:28px;">' + it.unit + '</span>' +
       '</div>';
     }).join('');
   }
